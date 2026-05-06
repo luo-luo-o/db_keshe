@@ -1,0 +1,17 @@
+services:
+  oracle11g:
+    # 这是一个非常经典的 11g 镜像，兼容性极好
+    image: gvenzl/oracle-xe:11
+    container_name: oracle11g
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=${DB_PASSWORD}  # 设置你的 SYS 和 SYSTEM 密码
+      - NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+      - NLS_LANGUAGE=AMERICAN
+      - NLS_TERRITORY=AMERICA
+    volumes:
+      # 注意：Gvenzl 的镜像数据挂载路径是 /opt/oracle/oradata
+      - ./workspace/datas/oracle_data:/opt/oracle/oradata
+    shm_size: '1gb'
+    restart: no

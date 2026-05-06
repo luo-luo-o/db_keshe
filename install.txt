@@ -1,0 +1,3 @@
+下载链接：https://pan.quark.cn/s/c802c735a52b
+
+包含：nodejs安装包， IDEA 2025安装包， zulu17-jdk17.msi, vsc安装包

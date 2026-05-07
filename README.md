@@ -9,22 +9,49 @@
 - **数据库 (DB)**: Oracle Database XE 21c
 
 ## 📂 目录说明
+
 ```text
 .
 ├── Core/               # 后端工程：Spring Boot 源码与 Maven 配置
 ├── Front/              # 前端工程：Vue 3 + TS 源码
 ├── docker-compose.yml  # 数据库环境定义
 └── README.md           # 项目指南
-``` 
+```
 
-## Install
+## Build 脚本
 
-个人配置文件存放在 `.env` 中，可以直接在 `.env.template` 配置并重命名为 `.env` 以快速启用。后端从 `Core` 目录启动时会可选读取仓库根目录 `.env`。
+本项目依赖与 `Oracle 21C 数据库`， `nodejs` 等构建工具，请确保电脑上存在对应的工具。
 
-默认 Docker 数据库连接：
+个人配置文件存放在 `.env` 中，可以直接在 `.env.template` 配置并重命名为 `.env` 以快速启用。
 
-- 镜像：`gvenzl/oracle-xe:21`
-- 容器：`oracle21c`
-- JDBC：`jdbc:oracle:thin:@//localhost:1521/XEPDB1`
-- 初始化入口：`Core/src/main/resources/db/oracle21c-init.sql`
-- 数据库脚本分层：`oracle21c-schema.sql` 建结构，`oracle21c-base-data.sql` 写部署基础数据，`oracle21c-mock-data.sql` 写占位演示数据
+`release/` 目录提供面向 Windows 演示环境的一键构建和启动脚本。执行前建议先根据 `.env.template` 准备仓库根目录 `.env`，至少确认 `ORACLE_PASSWORD`、`DB_USERNAME`、`DB_PASSWORD`、`DB_URL` 与当前数据库环境一致。
+
+### 一键构建：`release/build.bat`
+
+运行方式：
+
+```powershell
+.\release\build.bat
+```
+
+### 一键启动：`release/start.bat`
+
+运行方式：
+
+```powershell
+.\release\start.bat
+```
+
+后台模式：
+
+```powershell
+.\release\start.bat -b
+```
+
+### Oracle in Docker
+
+首先保证电脑上存在 `Docker` 环境
+
+``` powershell / bash
+docker compose up -d
+```

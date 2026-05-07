@@ -1,17 +1,23 @@
 services:
-  oracle11g:
-    # 这是一个非常经典的 11g 镜像，兼容性极好
-    image: gvenzl/oracle-xe:11
-    container_name: oracle11g
+  oracle21c:
+    image: gvenzl/oracle-xe:21
+    container_name: oracle21c
     ports:
       - "1521:1521"
     environment:
-      - ORACLE_PASSWORD=${DB_PASSWORD}  # 设置你的 SYS 和 SYSTEM 密码
-      - NLS_LANG=AMERICAN_AMERICA.AL32UTF8
-      - NLS_LANGUAGE=AMERICAN
-      - NLS_TERRITORY=AMERICA
+      - ORACLE_PASSWORD=oracle
+      - APP_USER=myuser
+      - APP_USER_PASSWORD=mypassword
     volumes:
-      # 注意：Gvenzl 的镜像数据挂载路径是 /opt/oracle/oradata
-      - ./workspace/datas/oracle_data:/opt/oracle/oradata
-    shm_size: '1gb'
+      # Oracle 21c XE data files. Use a named volume to avoid Windows bind-mount issues.
+      - psm_oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: no
+
+volumes:
+  psm_oracle_data:
+    driver: local

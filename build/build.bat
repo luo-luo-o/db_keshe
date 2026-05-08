@@ -8,7 +8,7 @@ set "FRONT_DIR=%ROOT_DIR%\Front"
 set "CORE_DIR=%ROOT_DIR%\Core"
 set "STATIC_DIR=%CORE_DIR%\src\main\resources\static"
 set "DIST_DIR=%FRONT_DIR%\dist"
-set "RELEASE_DIR=%ROOT_DIR%\release"
+set "RELEASE_DIR=%ROOT_DIR%\build"
 set "JAR_NAME=database-keshe-0.0.1-SNAPSHOT.jar"
 
 echo ======================================================

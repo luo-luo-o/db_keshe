@@ -26,26 +26,26 @@
 
 `release/` 目录提供面向 Windows 演示环境的一键构建和启动脚本。执行前建议先根据 `.env.template` 准备仓库根目录 `.env`，至少确认 `ORACLE_PASSWORD`、`DB_USERNAME`、`DB_PASSWORD`、`DB_URL` 与当前数据库环境一致。
 
-### 一键构建：`release/build.bat`
+### 一键构建：`build/build.bat`
 
 运行方式：
 
 ```powershell
-.\release\build.bat
+.\build\build.bat
 ```
 
-### 一键启动：`release/start.bat`
+### 一键启动：`build/start.bat`
 
 运行方式：
 
 ```powershell
-.\release\start.bat
+.\build\start.bat
 ```
 
 后台模式：
 
 ```powershell
-.\release\start.bat -b
+.\build\start.bat -b
 ```
 
 ### Oracle in Docker

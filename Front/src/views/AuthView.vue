@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { login, register } from '../api/auth'
-import type { LoginRequest, RegisterRequest, RoleCode } from '../types/auth'
+import { toSession } from '../session'
+import { roleLabels, roleOptions } from '../types/auth'
+import type { AuthSession, LoginRequest, RegisterRequest } from '../types/auth'
 
 type AuthMode = 'login' | 'register'
 
@@ -9,7 +11,10 @@ interface RegisterForm extends RegisterRequest {
   confirmPassword: string
 }
 
-const roleOptions: RoleCode[] = ['ADMIN', '操作员', '工程师', '经理']
+const emit = defineEmits<{
+  login: [session: AuthSession]
+}>()
+
 const mode = ref<AuthMode>('login')
 const message = ref('')
 const isSubmitting = ref(false)
@@ -24,7 +29,7 @@ const registerForm = reactive<RegisterForm>({
   password: '',
   confirmPassword: '',
   displayName: '',
-  roleCode: '操作员',
+  roleCode: 'OPERATOR',
 })
 
 function switchMode(nextMode: AuthMode) {
@@ -80,11 +85,13 @@ async function handleLogin() {
   message.value = ''
 
   try {
-    await login({
+    const response = await login({
       username: loginForm.username.trim(),
       password: loginForm.password,
     })
+    const session = toSession(response)
     message.value = '登录成功'
+    emit('login', session)
   } catch (error) {
     message.value = getErrorMessage(error)
   } finally {
@@ -110,7 +117,8 @@ async function handleRegister() {
       displayName: registerForm.displayName.trim(),
       roleCode: registerForm.roleCode,
     })
-    message.value = '注册成功'
+    message.value = '注册成功，请返回登录'
+    switchMode('login')
   } catch (error) {
     message.value = getErrorMessage(error)
   } finally {
@@ -139,7 +147,12 @@ async function handleRegister() {
       <form v-if="mode === 'login'" class="auth-form" @submit.prevent="handleLogin">
         <label>
           用户名
-          <input v-model="loginForm.username" name="username" autocomplete="username" />
+          <input
+            v-model="loginForm.username"
+            name="username"
+            autocomplete="username"
+            placeholder="admin / operator / engineer01"
+          />
         </label>
 
         <label>
@@ -171,8 +184,8 @@ async function handleRegister() {
         <label>
           角色
           <select v-model="registerForm.roleCode" name="roleCode">
-            <option v-for="role in roleOptions" :key="role" :value="role">
-              {{ role }}
+            <option v-for="role in roleOptions" :key="role.value" :value="role.value">
+              {{ role.label }}
             </option>
           </select>
         </label>
@@ -208,16 +221,40 @@ async function handleRegister() {
 </template>
 
 <style scoped>
-/* TODO: 后续补充正式样式 */
 .auth-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #eef2f7;
+  padding: 32px 16px;
+  box-sizing: border-box;
 }
 
 .auth-panel {
   width: min(420px, calc(100% - 32px));
+  padding: 28px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
+  text-align: left;
+}
+
+.auth-panel header {
+  margin-bottom: 20px;
+}
+
+.auth-panel h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #111827;
+}
+
+.auth-panel p {
+  color: #64748b;
 }
 
 .auth-tabs,
@@ -232,10 +269,19 @@ async function handleRegister() {
 
 .auth-tabs button {
   flex: 1;
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
 }
 
 .auth-tabs .active {
   font-weight: 700;
+  color: #fff;
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .auth-form {
@@ -247,15 +293,34 @@ async function handleRegister() {
   flex-direction: column;
   gap: 6px;
   text-align: left;
+  color: #334155;
 }
 
 .auth-form input,
 .auth-form select,
 .auth-form button {
   min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
+.auth-form button {
+  color: #fff;
+  border-color: #0f172a;
+  background: #0f172a;
+  cursor: pointer;
+}
+
+.auth-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .auth-message {
   margin-top: 16px;
+  color: #1d4ed8;
 }
+
 </style>

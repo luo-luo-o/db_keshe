@@ -140,6 +140,12 @@ Station -> Bay -> Device -> Tag
 6. TypeScript 类型放入 `src/types/`，接口函数放入 `src/api/`。
 7. 颜色和布局保持工程监控系统风格：克制、清晰、信息密度适中，不使用模板首页。
 
+## 角色编码约定
+
+- 数据库和后端接口只使用英文角色编码：`ADMIN`、`OPERATOR`、`ENGINEER`、`MANAGER`。
+- 前端界面显示中文角色名，但提交注册、保存登录态、请求业务接口时必须使用英文编码。
+- `ADMIN` 是全权限角色，拥有其他所有角色的全部权限。
+
 ## Oracle 21c 约束
 
 1. 项目继续使用显式 `SEQUENCE` 主键，便于和 MyBatis 批量写入策略保持一致。
@@ -180,22 +186,10 @@ spring:
 
 ## 常用命令
 
-后端：
+构建验收统一使用仓库根目录的一键脚本：
 
 ```powershell
-cd Core
-.\mvnw.cmd spring-boot:run
-.\mvnw.cmd test
-.\mvnw.cmd package
-```
-
-前端：
-
-```powershell
-cd Front
-npm install
-npm run dev
-npm run build
+.\build\build.bat
 ```
 
 数据库：

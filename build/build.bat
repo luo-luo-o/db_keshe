@@ -43,6 +43,13 @@ if not exist "node_modules" (
         popd
         goto :FAIL
     )
+) else if not exist "node_modules\element-plus" (
+    echo [INFO] Frontend dependencies changed. Running npm install...
+    call npm install
+    if errorlevel 1 (
+        popd
+        goto :FAIL
+    )
 )
 
 call npm run build
@@ -72,11 +79,18 @@ if errorlevel 1 goto :FAIL
 
 echo.
 echo [3/5] Packaging backend jar...
-set "MAVEN_CMD=%CORE_DIR%\mvnw.cmd"
+set "MAVEN_CMD="
 
-if not exist "%MAVEN_CMD%" (
-    echo [ERROR] Maven command not found: %MAVEN_CMD%
-    goto :FAIL
+for /f "delims=" %%M in ('where mvn.cmd 2^>nul') do (
+    if not defined MAVEN_CMD set "MAVEN_CMD=%%M"
+)
+
+if not defined MAVEN_CMD (
+    set "MAVEN_CMD=%CORE_DIR%\mvnw.cmd"
+    if not exist "%MAVEN_CMD%" (
+        echo [ERROR] Maven command not found: %MAVEN_CMD%
+        goto :FAIL
+    )
 )
 
 pushd "%CORE_DIR%" || goto :FAIL

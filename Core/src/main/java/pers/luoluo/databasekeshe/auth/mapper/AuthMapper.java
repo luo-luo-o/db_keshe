@@ -17,6 +17,13 @@ public interface AuthMapper {
             """)
     SysUser findByUsername(@Param("username") String username);
 
+    @Select("""
+            SELECT ID, USERNAME, PASSWORD_HASH, DISPLAY_NAME, ROLE_CODE, PERSON_ID, STATUS
+            FROM SYS_USER
+            WHERE ID = #{id}
+            """)
+    SysUser findById(@Param("id") Long id);
+
     @Insert("""
             INSERT INTO SYS_USER (
                 ID,

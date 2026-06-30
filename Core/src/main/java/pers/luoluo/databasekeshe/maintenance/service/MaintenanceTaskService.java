@@ -2,6 +2,8 @@ package pers.luoluo.databasekeshe.maintenance.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.CallableStatementCallback;
@@ -20,6 +22,7 @@ import pers.luoluo.databasekeshe.security.RoleCode;
 @Service
 public class MaintenanceTaskService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(MaintenanceTaskService.class);
     private static final int HISTORY_AWARE_TASK_LIMIT = 1000;
 
     private final MaintenanceTaskMapper maintenanceTaskMapper;
@@ -57,6 +60,11 @@ public class MaintenanceTaskService {
             throw new AuthException(HttpStatus.NOT_FOUND, "Task does not exist.");
         }
 
+        MaintenanceTaskResponse existingTask = maintenanceTaskMapper.findById(taskId);
+        if (existingTask == null) {
+            throw new AuthException(HttpStatus.NOT_FOUND, "Task does not exist.");
+        }
+
         Integer status = request.status();
         validateStatus(status);
         String assignee = normalizedText(request.assignee(), user.displayName());
@@ -82,6 +90,16 @@ public class MaintenanceTaskService {
         if (updatedTask == null) {
             throw new AuthException(HttpStatus.NOT_FOUND, "Task does not exist.");
         }
+        LOGGER.info(
+                "event=maintenance_task_update userId={} username={} taskId={} fromStatus={} toStatus={} assigneeChanged={} feedbackChanged={} result=SUCCESS",
+                user.userId(),
+                sanitize(user.username()),
+                taskId,
+                existingTask.status(),
+                updatedTask.status(),
+                !equalsNormalized(existingTask.assignee(), updatedTask.assignee()),
+                !equalsNormalized(existingTask.feedback(), updatedTask.feedback())
+        );
         return updatedTask;
     }
 
@@ -109,5 +127,13 @@ public class MaintenanceTaskService {
             return fallback;
         }
         return text.trim();
+    }
+
+    private boolean equalsNormalized(String left, String right) {
+        return java.util.Objects.equals(normalizedText(left, null), normalizedText(right, null));
+    }
+
+    private String sanitize(String value) {
+        return value == null ? "-" : value.replace('\r', ' ').replace('\n', ' ').trim();
     }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import DeviceManagementDialog from '../components/DeviceManagementDialog.vue'
 import {
   fetchHistory,
   fetchMessages,
@@ -81,10 +82,51 @@ const selectedHistoryGroup = ref<HistoryTimeGroup | null>(null)
 const selectedTask = ref<MaintenanceTaskResponse | null>(null)
 const runtimeLogLevel = ref<RuntimeLogLevel>('INFO')
 const chartEl = ref<HTMLElement | null>(null)
+const deviceManagementVisible = ref(false)
 
 let simulationPollTimer: number | undefined
 let chart: echarts.ECharts | null = null
 let chartResizeObserver: ResizeObserver | null = null
+
+type SerializedTaskState = {
+  running: Promise<void> | null
+  rerun: boolean
+}
+
+function createSerializedTaskState(): SerializedTaskState {
+  return {
+    running: null,
+    rerun: false,
+  }
+}
+
+async function runSerializedTask(state: SerializedTaskState, task: () => Promise<void>) {
+  if (state.running) {
+    state.rerun = true
+    await state.running
+    return
+  }
+
+  state.running = (async () => {
+    try {
+      do {
+        state.rerun = false
+        await task()
+      } while (state.rerun)
+    } finally {
+      state.running = null
+    }
+  })()
+
+  await state.running
+}
+
+const metadataLoadState = createSerializedTaskState()
+const messageQueryState = createSerializedTaskState()
+const historyQueryState = createSerializedTaskState()
+const taskQueryState = createSerializedTaskState()
+const simulationStatusLoadState = createSerializedTaskState()
+const runtimeLogsLoadState = createSerializedTaskState()
 
 const messageForm = reactive({
   category: '' as '' | MessageCategory,
@@ -103,6 +145,7 @@ const historyForm = reactive({
   startTime: '',
   endTime: '',
 })
+const historyUseRollingWindow = ref(true)
 
 const taskForm = reactive({
   status: '' as '' | 0 | 1 | 2,
@@ -253,7 +296,10 @@ onMounted(async () => {
   resetHistoryRange()
   window.addEventListener('resize', handleChartResize)
   await loadMetadata()
-  await Promise.all([queryMessages(), queryHistory(), queryTasks(), loadSimulationStatus(), loadRuntimeLogs()])
+  await Promise.all([
+    loadActiveTabData(),
+    ...(isAdmin.value ? [loadSimulationStatus()] : []),
+  ])
   startSimulationPolling()
 })
 
@@ -298,6 +344,24 @@ watch(
 )
 
 watch(
+  () => historyForm.startTime,
+  (value, previousValue) => {
+    if (previousValue !== undefined && value !== previousValue) {
+      historyUseRollingWindow.value = false
+    }
+  },
+)
+
+watch(
+  () => historyForm.endTime,
+  (value, previousValue) => {
+    if (previousValue !== undefined && value !== previousValue) {
+      historyUseRollingWindow.value = false
+    }
+  },
+)
+
+watch(
   () => taskForm.transformerId,
   () => {
     taskForm.circuitId = undefined
@@ -319,14 +383,7 @@ watch(
   () => activeTab.value,
   () => {
     void syncHistoryChart()
-
-    if (activeTab.value === 'logs') {
-      void loadRuntimeLogs()
-    }
-
-    if (activeTab.value === 'tasks') {
-      void queryTasks()
-    }
+    void loadActiveTabData()
   },
 )
 
@@ -358,56 +415,146 @@ function pointsForScope(transformerId?: number, circuitId?: number): MeasurePoin
 }
 
 async function loadMetadata() {
-  isLoadingMetadata.value = true
-  errorMessage.value = ''
+  await runSerializedTask(metadataLoadState, async () => {
+    isLoadingMetadata.value = true
+    errorMessage.value = ''
 
-  try {
-    transformers.value = await fetchTransformers(props.session)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingMetadata.value = false
+    try {
+      transformers.value = await fetchTransformers(props.session)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingMetadata.value = false
+    }
+  })
+}
+
+async function handleMetadataChanged() {
+  await loadMetadata()
+  sanitizeMetadataSelections()
+  await loadActiveTabData()
+}
+
+async function loadActiveTabData(tab: TabName = activeTab.value) {
+  if (tab === 'messages') {
+    await queryMessages()
+    return
+  }
+
+  if (tab === 'history') {
+    await queryHistory()
+    return
+  }
+
+  if (tab === 'tasks' && canQueryTasks.value) {
+    await queryTasks()
+    return
+  }
+
+  if (tab === 'logs' && isAdmin.value) {
+    await loadRuntimeLogs()
   }
 }
 
-async function queryMessages() {
-  isLoadingMessages.value = true
-  errorMessage.value = ''
-
-  try {
-    messages.value = await fetchMessages(props.session, {
-      category: messageForm.category || undefined,
-      transformerId: messageForm.transformerId,
-      circuitId: messageForm.circuitId,
-      pointId: messageForm.pointId,
-      startTime: toIsoValue(messageForm.startTime),
-      endTime: toIsoValue(messageForm.endTime),
-      keyword: messageForm.keyword.trim() || undefined,
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingMessages.value = false
+async function loadPollingData() {
+  if (activeTab.value === 'messages') {
+    await queryMessages()
+    return
   }
+
+  if (activeTab.value === 'history') {
+    await queryHistory()
+    return
+  }
+
+  if (activeTab.value === 'tasks' && canQueryTasks.value) {
+    await queryTasks()
+  }
+}
+
+function sanitizeMetadataSelections() {
+  const transformerIds = new Set(transformers.value.map((transformer) => transformer.transformerId))
+  const circuitIds = new Set(transformers.value.flatMap((transformer) => transformer.circuits.map((circuit) => circuit.circuitId)))
+  const pointIds = new Set(
+    transformers.value.flatMap((transformer) => [
+      ...transformer.points.map((point) => point.id),
+      ...transformer.circuits.flatMap((circuit) => circuit.points.map((point) => point.id)),
+    ]),
+  )
+
+  if (messageForm.transformerId && !transformerIds.has(messageForm.transformerId)) {
+    messageForm.transformerId = undefined
+  }
+  if (messageForm.circuitId && !circuitIds.has(messageForm.circuitId)) {
+    messageForm.circuitId = undefined
+  }
+  if (messageForm.pointId && !pointIds.has(messageForm.pointId)) {
+    messageForm.pointId = undefined
+  }
+
+  if (historyForm.transformerId && !transformerIds.has(historyForm.transformerId)) {
+    historyForm.transformerId = undefined
+  }
+  if (historyForm.circuitId && !circuitIds.has(historyForm.circuitId)) {
+    historyForm.circuitId = undefined
+  }
+  if (historyForm.pointId && !pointIds.has(historyForm.pointId)) {
+    historyForm.pointId = undefined
+  }
+
+  if (taskForm.transformerId && !transformerIds.has(taskForm.transformerId)) {
+    taskForm.transformerId = undefined
+  }
+  if (taskForm.circuitId && !circuitIds.has(taskForm.circuitId)) {
+    taskForm.circuitId = undefined
+  }
+}
+async function queryMessages() {
+  await runSerializedTask(messageQueryState, async () => {
+    isLoadingMessages.value = true
+    errorMessage.value = ''
+
+    try {
+      messages.value = await fetchMessages(props.session, {
+        category: messageForm.category || undefined,
+        transformerId: messageForm.transformerId,
+        circuitId: messageForm.circuitId,
+        pointId: messageForm.pointId,
+        startTime: toIsoStartValue(messageForm.startTime),
+        endTime: toIsoEndValue(messageForm.endTime),
+        keyword: messageForm.keyword.trim() || undefined,
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingMessages.value = false
+    }
+  })
 }
 
 async function queryHistory() {
-  isLoadingHistory.value = true
-  errorMessage.value = ''
+  await runSerializedTask(historyQueryState, async () => {
+    isLoadingHistory.value = true
+    errorMessage.value = ''
 
-  try {
-    historyRows.value = await fetchHistory(props.session, {
-      transformerId: historyForm.transformerId,
-      circuitId: historyForm.circuitId,
-      pointId: historyForm.pointId,
-      startTime: toIsoValue(historyForm.startTime),
-      endTime: toIsoValue(historyForm.endTime),
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingHistory.value = false
-  }
+    try {
+      if (historyUseRollingWindow.value) {
+        resetHistoryRange()
+      }
+
+      historyRows.value = await fetchHistory(props.session, {
+        transformerId: historyForm.transformerId,
+        circuitId: historyForm.circuitId,
+        pointId: historyForm.pointId,
+        startTime: historyUseRollingWindow.value ? undefined : toIsoStartValue(historyForm.startTime),
+        endTime: historyUseRollingWindow.value ? undefined : toIsoEndValue(historyForm.endTime),
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingHistory.value = false
+    }
+  })
 }
 
 async function queryTasks() {
@@ -415,23 +562,25 @@ async function queryTasks() {
     return
   }
 
-  isLoadingTasks.value = true
-  errorMessage.value = ''
+  await runSerializedTask(taskQueryState, async () => {
+    isLoadingTasks.value = true
+    errorMessage.value = ''
 
-  try {
-    tasks.value = await fetchTasks(props.session, {
-      status: taskForm.status === '' ? undefined : taskForm.status,
-      transformerId: taskForm.transformerId,
-      circuitId: taskForm.circuitId,
-      startTime: toIsoValue(taskForm.startTime),
-      endTime: toIsoValue(taskForm.endTime),
-      keyword: taskForm.keyword.trim() || undefined,
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingTasks.value = false
-  }
+    try {
+      tasks.value = await fetchTasks(props.session, {
+        status: taskForm.status === '' ? undefined : taskForm.status,
+        transformerId: taskForm.transformerId,
+        circuitId: taskForm.circuitId,
+        startTime: toIsoStartValue(taskForm.startTime),
+        endTime: toIsoEndValue(taskForm.endTime),
+        keyword: taskForm.keyword.trim() || undefined,
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingTasks.value = false
+    }
+  })
 }
 
 async function loadSimulationStatus() {
@@ -439,11 +588,13 @@ async function loadSimulationStatus() {
     return
   }
 
-  try {
-    simulation.value = await fetchSimulationStatus(props.session)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
+  await runSerializedTask(simulationStatusLoadState, async () => {
+    try {
+      simulation.value = await fetchSimulationStatus(props.session)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    }
+  })
 }
 
 function startSimulationPolling() {
@@ -454,12 +605,7 @@ function startSimulationPolling() {
   simulationPollTimer = window.setInterval(() => {
     if (simulation.value?.running) {
       void loadSimulationStatus()
-      void queryMessages()
-      void queryHistory()
-
-      if (canQueryTasks.value) {
-        void queryTasks()
-      }
+      void loadPollingData()
     }
   }, 1000)
 }
@@ -469,16 +615,18 @@ async function loadRuntimeLogs() {
     return
   }
 
-  isLoadingRuntimeLogs.value = true
-  errorMessage.value = ''
+  await runSerializedTask(runtimeLogsLoadState, async () => {
+    isLoadingRuntimeLogs.value = true
+    errorMessage.value = ''
 
-  try {
-    backendLogs.value = await fetchRuntimeLogs(props.session, runtimeLogLevel.value)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingRuntimeLogs.value = false
-  }
+    try {
+      backendLogs.value = await fetchRuntimeLogs(props.session, runtimeLogLevel.value)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingRuntimeLogs.value = false
+    }
+  })
 }
 
 async function handleStartSimulation() {
@@ -499,7 +647,7 @@ async function handleStopSimulation() {
 
   try {
     simulation.value = await stopSimulation(props.session)
-    await Promise.all([queryMessages(), queryHistory(), queryTasks()])
+    await loadActiveTabData()
   } catch (error) {
     errorMessage.value = getErrorMessage(error)
   } finally {
@@ -652,6 +800,7 @@ async function submitTaskUpdate() {
 }
 
 function resetHistoryRange() {
+  historyUseRollingWindow.value = true
   historyForm.startTime = toLocalInputValue(new Date(Date.now() - 60 * 60 * 1000))
   historyForm.endTime = toLocalInputValue(new Date())
 }
@@ -861,12 +1010,20 @@ function toLocalInputValue(date: Date) {
   return local.toISOString().slice(0, 16)
 }
 
-function toIsoValue(value: string) {
+function toIsoStartValue(value: string) {
   if (!value) {
     return undefined
   }
 
   return value.length === 16 ? `${value}:00` : value
+}
+
+function toIsoEndValue(value: string) {
+  if (!value) {
+    return undefined
+  }
+
+  return value.length === 16 ? `${value}:59` : value
 }
 
 function getErrorMessage(error: unknown) {
@@ -904,7 +1061,10 @@ function handleMenuSelect(key: string) {
           <h1>{{ activeTabTitle }}</h1>
           <p>{{ props.session.displayName }} / {{ roleLabels[props.session.roleCode] }}</p>
         </div>
-        <el-button @click="emit('logout')">退出登录</el-button>
+        <div class="topbar-actions">
+          <el-button v-if="isAdmin" type="primary" plain @click="deviceManagementVisible = true">设备管理</el-button>
+          <el-button @click="emit('logout')">退出登录</el-button>
+        </div>
       </header>
 
       <el-alert
@@ -1240,6 +1400,13 @@ function handleMenuSelect(key: string) {
       </section>
     </main>
 
+    <DeviceManagementDialog
+      v-if="isAdmin"
+      v-model="deviceManagementVisible"
+      :session="props.session"
+      :transformers="transformers"
+      @changed="handleMetadataChanged"
+    />
     <el-dialog v-model="transformerStatusDialogVisible" :title="selectedTransformerStatusLabel" width="820px">
       <el-table :data="filteredStatusTransformers" border stripe max-height="480">
         <el-table-column prop="transformerCode" label="编码" min-width="130" />
@@ -1395,6 +1562,11 @@ function handleMenuSelect(key: string) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 18px;
+}
+.topbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .topbar h1 {
@@ -1596,6 +1768,12 @@ function handleMenuSelect(key: string) {
   .history-chart-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

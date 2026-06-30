@@ -47,7 +47,7 @@ public interface SimulationMapper {
                 #{sampleTime},
                 #{value},
                 #{qualityFlag},
-                SYSTIMESTAMP
+                LOCALTIMESTAMP
             )
             """)
     int insertRawData(
@@ -89,7 +89,7 @@ public interface SimulationMapper {
                 #{startValue},
                 #{endValue},
                 0,
-                SYSTIMESTAMP
+                LOCALTIMESTAMP
             )
             """)
     int insertAlarm(
@@ -121,7 +121,7 @@ public interface SimulationMapper {
                 0,
                 #{assignee},
                 NULL,
-                SYSTIMESTAMP,
+                LOCALTIMESTAMP,
                 NULL,
                 NULL
             )

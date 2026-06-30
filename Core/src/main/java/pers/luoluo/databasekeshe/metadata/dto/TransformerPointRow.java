@@ -31,6 +31,7 @@ public record TransformerPointRow(
         String unit,
         BigDecimal minLimit,
         BigDecimal maxLimit,
-        BigDecimal rateLimit
+        BigDecimal rateLimit,
+        Integer pointStatus
 ) {
 }

@@ -8,6 +8,8 @@ services:
       - ORACLE_PASSWORD=oracle
       - APP_USER=myuser
       - APP_USER_PASSWORD=mypassword
+      - TZ=Asia/Shanghai
+      - ORA_SDTZ=Asia/Shanghai
     volumes:
       # Oracle 21c XE data files. Use a named volume to avoid Windows bind-mount issues.
       - psm_oracle_data:/opt/oracle/oradata

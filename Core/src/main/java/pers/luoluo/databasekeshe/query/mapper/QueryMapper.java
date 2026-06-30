@@ -74,6 +74,41 @@ public interface QueryMapper {
 
     @Select("""
             <script>
+            SELECT MAX(r.SAMPLE_TIME)
+            FROM TS_RAW_DATA r
+            JOIN BOX_TRANSFORMER bt ON bt.ID = r.TRANSFORMER_ID
+            LEFT JOIN POWER_CIRCUIT pc ON pc.ID = r.CIRCUIT_ID
+            JOIN MEASURE_POINT mp ON mp.ID = r.POINT_ID
+            WHERE 1 = 1
+            <if test="transformerId != null">
+                AND r.TRANSFORMER_ID = #{transformerId}
+            </if>
+            <if test="circuitId != null">
+                AND r.CIRCUIT_ID = #{circuitId}
+            </if>
+            <if test="pointId != null">
+                AND r.POINT_ID = #{pointId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(bt.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(pc.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_CODE) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.MEASURE_TYPE) LIKE '%' || LOWER(#{keyword}) || '%'
+                )
+            </if>
+            </script>
+            """)
+    LocalDateTime findLatestSampleMessageTime(
+            @Param("transformerId") Long transformerId,
+            @Param("circuitId") Long circuitId,
+            @Param("pointId") Long pointId,
+            @Param("keyword") String keyword
+    );
+
+    @Select("""
+            <script>
             SELECT *
             FROM (
                 SELECT
@@ -132,6 +167,42 @@ public interface QueryMapper {
             @Param("endTime") LocalDateTime endTime,
             @Param("keyword") String keyword,
             @Param("limit") int limit
+    );
+
+    @Select("""
+            <script>
+            SELECT MAX(a.START_TIME)
+            FROM ALARM_LOG a
+            JOIN BOX_TRANSFORMER bt ON bt.ID = a.TRANSFORMER_ID
+            LEFT JOIN POWER_CIRCUIT pc ON pc.ID = a.CIRCUIT_ID
+            LEFT JOIN MEASURE_POINT mp ON mp.ID = a.POINT_ID
+            WHERE 1 = 1
+            <if test="transformerId != null">
+                AND a.TRANSFORMER_ID = #{transformerId}
+            </if>
+            <if test="circuitId != null">
+                AND a.CIRCUIT_ID = #{circuitId}
+            </if>
+            <if test="pointId != null">
+                AND a.POINT_ID = #{pointId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(bt.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(pc.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_CODE) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(a.ALARM_TYPE) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(a.ALARM_LEVEL) LIKE '%' || LOWER(#{keyword}) || '%'
+                )
+            </if>
+            </script>
+            """)
+    LocalDateTime findLatestAlarmMessageTime(
+            @Param("transformerId") Long transformerId,
+            @Param("circuitId") Long circuitId,
+            @Param("pointId") Long pointId,
+            @Param("keyword") String keyword
     );
 
     @Select("""
@@ -195,6 +266,43 @@ public interface QueryMapper {
             @Param("endTime") LocalDateTime endTime,
             @Param("keyword") String keyword,
             @Param("limit") int limit
+    );
+
+    @Select("""
+            <script>
+            SELECT MAX(mt.CREATED_AT)
+            FROM MAINT_TASK mt
+            JOIN ALARM_LOG a ON a.ID = mt.ALARM_ID
+            JOIN BOX_TRANSFORMER bt ON bt.ID = a.TRANSFORMER_ID
+            LEFT JOIN POWER_CIRCUIT pc ON pc.ID = a.CIRCUIT_ID
+            LEFT JOIN MEASURE_POINT mp ON mp.ID = a.POINT_ID
+            WHERE 1 = 1
+            <if test="transformerId != null">
+                AND a.TRANSFORMER_ID = #{transformerId}
+            </if>
+            <if test="circuitId != null">
+                AND a.CIRCUIT_ID = #{circuitId}
+            </if>
+            <if test="pointId != null">
+                AND a.POINT_ID = #{pointId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    LOWER(bt.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(pc.NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_NAME) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mp.POINT_CODE) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mt.ASSIGNEE) LIKE '%' || LOWER(#{keyword}) || '%'
+                    OR LOWER(mt.FEEDBACK) LIKE '%' || LOWER(#{keyword}) || '%'
+                )
+            </if>
+            </script>
+            """)
+    LocalDateTime findLatestTaskMessageTime(
+            @Param("transformerId") Long transformerId,
+            @Param("circuitId") Long circuitId,
+            @Param("pointId") Long pointId,
+            @Param("keyword") String keyword
     );
 
     @Select("""
@@ -300,5 +408,50 @@ public interface QueryMapper {
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime,
             @Param("limit") int limit
+    );
+
+    @Select("""
+            <script>
+            SELECT MAX(sample_time)
+            FROM (
+                SELECT MAX(R.SAMPLE_TIME) AS sample_time
+                FROM TS_RAW_DATA R
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM TS_RAW_DATA_DAY_ARCHIVE A
+                    WHERE A.POINT_ID = R.POINT_ID
+                      AND A.ARCHIVE_DAY = TRUNC(R.SAMPLE_TIME)
+                )
+                <if test="transformerId != null">
+                    AND R.TRANSFORMER_ID = #{transformerId}
+                </if>
+                <if test="circuitId != null">
+                    AND R.CIRCUIT_ID = #{circuitId}
+                </if>
+                <if test="pointId != null">
+                    AND R.POINT_ID = #{pointId}
+                </if>
+
+                UNION ALL
+
+                SELECT MAX(CAST(A.ARCHIVE_DAY AS TIMESTAMP)) AS sample_time
+                FROM TS_RAW_DATA_DAY_ARCHIVE A
+                WHERE 1 = 1
+                <if test="transformerId != null">
+                    AND A.TRANSFORMER_ID = #{transformerId}
+                </if>
+                <if test="circuitId != null">
+                    AND A.CIRCUIT_ID = #{circuitId}
+                </if>
+                <if test="pointId != null">
+                    AND A.POINT_ID = #{pointId}
+                </if>
+            )
+            </script>
+            """)
+    LocalDateTime findLatestHistoryTime(
+            @Param("transformerId") Long transformerId,
+            @Param("circuitId") Long circuitId,
+            @Param("pointId") Long pointId
     );
 }

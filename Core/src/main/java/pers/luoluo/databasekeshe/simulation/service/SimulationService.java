@@ -6,25 +6,24 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.CallableStatementCallback;
 import org.springframework.jdbc.core.CallableStatementCreator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import pers.luoluo.databasekeshe.logging.service.RuntimeLogService;
 import pers.luoluo.databasekeshe.simulation.dto.SimulationStatusResponse;
 
 @Service
 public class SimulationService {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(SimulationService.class);
-
     private final JdbcTemplate jdbcTemplate;
+    private final RuntimeLogService runtimeLogService;
 
-    public SimulationService(JdbcTemplate jdbcTemplate) {
+    public SimulationService(JdbcTemplate jdbcTemplate, RuntimeLogService runtimeLogService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.runtimeLogService = runtimeLogService;
     }
 
     public SimulationStatusResponse start() {
@@ -70,7 +69,7 @@ public class SimulationService {
         try {
             callWithoutArguments("{call PKG_PSM_SIM.TICK}");
         } catch (DataAccessException exception) {
-            LOGGER.error("Database simulation tick failed", exception);
+            runtimeLogService.error("Database simulation tick failed", SimulationService.class.getName(), exception);
         }
     }
 

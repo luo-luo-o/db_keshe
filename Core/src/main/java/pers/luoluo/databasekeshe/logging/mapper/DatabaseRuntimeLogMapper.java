@@ -14,19 +14,27 @@ public interface DatabaseRuntimeLogMapper {
             SELECT *
             FROM (
                 SELECT
-                    ID AS id,
-                    'DATABASE' AS source,
-                    LEVEL_CODE AS level,
-                    MESSAGE AS message,
-                    CONTEXT AS context,
-                    CREATED_AT AS createdAt
+                    ID AS "id",
+                    'DATABASE' AS "source",
+                    LEVEL_CODE AS "level",
+                    MESSAGE AS "message",
+                    CONTEXT AS "context",
+                    CREATED_AT AS "createdAt"
                 FROM DB_RUNTIME_LOG
-                WHERE CASE LEVEL_CODE
-                    WHEN 'DEBUG' THEN 10
-                    WHEN 'INFO' THEN 20
-                    WHEN 'WARN' THEN 30
-                    WHEN 'ERROR' THEN 40
-                END &gt;= #{minWeight}
+                <choose>
+                    <when test="minWeight &lt;= 10">
+                        WHERE LEVEL_CODE IN ('DEBUG', 'INFO', 'WARN', 'ERROR')
+                    </when>
+                    <when test="minWeight &lt;= 20">
+                        WHERE LEVEL_CODE IN ('INFO', 'WARN', 'ERROR')
+                    </when>
+                    <when test="minWeight &lt;= 30">
+                        WHERE LEVEL_CODE IN ('WARN', 'ERROR')
+                    </when>
+                    <otherwise>
+                        WHERE LEVEL_CODE = 'ERROR'
+                    </otherwise>
+                </choose>
                 ORDER BY CREATED_AT DESC, ID DESC
             )
             WHERE ROWNUM &lt;= #{limit}

@@ -2,8 +2,8 @@ package pers.luoluo.databasekeshe.metadata.dto;
 
 import java.math.BigDecimal;
 
-public record MeasurePointOptionResponse(
-        Long id,
+public record UpdateMeasurePointRequest(
+        Long circuitId,
         String pointCode,
         String pointName,
         String pointGroup,

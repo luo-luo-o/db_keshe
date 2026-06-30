@@ -1,4 +1,4 @@
-/*
+﻿/*
   PSM-Smart Oracle 21c initialization entrypoint.
 
   Run this script from SQL*Plus / SQLcl / compatible database tools in the
@@ -13,7 +13,12 @@
     samples, alarms, maintenance tasks, and cabinet door logs.
 */
 
+ALTER SESSION SET TIME_ZONE = 'Asia/Shanghai';
+
 @@oracle21c-schema.sql
 @@oracle21c-base-data.sql
 @@oracle21c-mock-data.sql
 @@oracle21c-business.sql
+@@oracle21c-asset-management.sql
+@@oracle21c-localized-data.sql
+

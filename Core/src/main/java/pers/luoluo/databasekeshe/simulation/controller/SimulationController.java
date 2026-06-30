@@ -1,5 +1,7 @@
 package pers.luoluo.databasekeshe.simulation.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -18,6 +20,7 @@ import pers.luoluo.databasekeshe.simulation.service.SimulationService;
 @RequestMapping("/api/simulation")
 public class SimulationController {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(SimulationController.class);
     private final SimulationService simulationService;
     private final AccessGuard accessGuard;
 
@@ -40,8 +43,11 @@ public class SimulationController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestHeader("X-Role-Code") String roleCode
     ) {
-        requireAdmin(userId, roleCode);
-        return simulationService.start();
+        AuthenticatedUser user = requireAdmin(userId, roleCode);
+        SimulationStatusResponse response = simulationService.start();
+        LOGGER.info("event=simulation_start userId={} username={} roleCode={} running={} anomalyEnabled={} result=SUCCESS",
+                user.userId(), sanitize(user.username()), user.roleCode(), response.running(), response.anomalyEnabled());
+        return response;
     }
 
     @PostMapping("/stop")
@@ -49,8 +55,11 @@ public class SimulationController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestHeader("X-Role-Code") String roleCode
     ) {
-        requireAdmin(userId, roleCode);
-        return simulationService.stop();
+        AuthenticatedUser user = requireAdmin(userId, roleCode);
+        SimulationStatusResponse response = simulationService.stop();
+        LOGGER.info("event=simulation_stop userId={} username={} roleCode={} running={} anomalyEnabled={} result=SUCCESS",
+                user.userId(), sanitize(user.username()), user.roleCode(), response.running(), response.anomalyEnabled());
+        return response;
     }
 
     @PutMapping("/anomaly")
@@ -59,13 +68,20 @@ public class SimulationController {
             @RequestHeader("X-Role-Code") String roleCode,
             @RequestBody AnomalyToggleRequest request
     ) {
-        requireAdmin(userId, roleCode);
-        return simulationService.setAnomalyEnabled(request.enabled());
+        AuthenticatedUser user = requireAdmin(userId, roleCode);
+        SimulationStatusResponse response = simulationService.setAnomalyEnabled(request.enabled());
+        LOGGER.info("event=simulation_anomaly_toggle userId={} username={} roleCode={} enabled={} running={} result=SUCCESS",
+                user.userId(), sanitize(user.username()), user.roleCode(), request.enabled(), response.running());
+        return response;
     }
 
     private AuthenticatedUser requireAdmin(Long userId, String roleCode) {
         AuthenticatedUser user = accessGuard.requireUser(userId, roleCode);
         accessGuard.requireAny(user, RoleCode.ADMIN);
         return user;
+    }
+
+    private String sanitize(String value) {
+        return value == null ? "-" : value.replace('\r', ' ').replace('\n', ' ').trim();
     }
 }

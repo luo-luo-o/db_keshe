@@ -18,9 +18,11 @@ set ROOT_DIR=%~dp0..
 set JAR_NAME=database-keshe-0.0.1-SNAPSHOT.jar
 set TARGET_JAR=%~dp0%JAR_NAME%
 set SOURCE_JAR=%ROOT_DIR%\Core\target\%JAR_NAME%
+set LOG_DIR=%ROOT_DIR%\logs
 
 set BG_MODE=false
 if "%1"=="-b" set BG_MODE=true
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 echo %CYAN%======================================================%RESET% 
 echo    %CYAN%PSM-Smart 变电站监控系统 - 演示模式%RESET% 
@@ -172,10 +174,10 @@ if defined TARGET_PID (
 echo [%CYAN%3/3%RESET%] Starting Service...
 if "%BG_MODE%"=="true" (
     echo [Info] %YELLOW%Running in BACKGROUND mode.%RESET%
-    start /b java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env"
+    start /b java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env" --app.log.dir="%LOG_DIR%"
 ) else (
     echo [Info] %CYAN%Running in FOREGROUND mode.%RESET%
-    java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env"
+    java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env" --app.log.dir="%LOG_DIR%"
 )
 
 :EXIT_SCRIPT
@@ -222,6 +224,7 @@ echo [Status] %YELLOW%Preparing local Oracle schema user !DB_USERNAME!...%RESET%
 (
     echo SET DEFINE OFF
     echo WHENEVER SQLERROR EXIT SQL.SQLCODE
+    echo ALTER SESSION SET TIME_ZONE = 'Asia/Shanghai';
     echo DECLARE
     echo   v_count NUMBER;
     echo BEGIN
@@ -231,6 +234,7 @@ echo [Status] %YELLOW%Preparing local Oracle schema user !DB_USERNAME!...%RESET%
     echo   END IF;
     echo END;
     echo /
+    echo ALTER DATABASE SET TIME_ZONE = '+08:00';
     echo GRANT CONNECT, RESOURCE TO !DB_USERNAME!;
     echo ALTER USER !DB_USERNAME! QUOTA UNLIMITED ON USERS;
     echo EXIT

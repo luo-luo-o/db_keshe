@@ -1,50 +1,64 @@
-# 箱式变压器监测系统 (PSM-Smart-System)
+# 箱式变压器监测系统
 
-基于 Spring Boot 3 与 Vue 3 + TypeScript 开发的箱式变压器监测与维保管理系统。本项目采用前后端分离架构，数据库使用 Oracle Database XE 21c。
+基于 Spring Boot 3、Vue 3 和 Oracle 21c 的箱式变压器监测与维保管理系统。
 
-## 项目架构
-
-- 后端 (Core): Java 17, Spring Boot 3, MyBatis, Oracle Driver
-- 前端 (Front): Vue 3, Vite, TypeScript, Element Plus, ECharts
-- 数据库 (DB): Oracle Database XE 21c
-
-## 当前功能
-
-- 登录后工作台提供消息查询、历史数据、工单管理、箱变状态总览和 ADMIN 模拟测试。
-- 元数据按“箱变/回路/测点”层级组织，回路支持 1 个进线和多个出线。
-- 进线/出线测点使用电压、电流、功率因数、电能；箱变本体和箱式柜覆盖油温、开关、熔断器、温湿度、烟雾和柜门状态。
-- 历史数据默认查询当前时间最近 1 小时；列表按采样时刻聚合，同一时刻的多测点数据可点击查看明细。
-- 维保工单支持按状态、箱变、回路、测点和关键词筛选，工程师或管理员可更新处理状态和反馈。
-- ADMIN 模拟测试固定每 1 秒写入启用测点，并实时刷新写入采样、生成告警、生成工单和最近写入时间。
-- 模拟采样会按测点类型校验合理范围，超出范围的采样会标记为可疑并生成严重告警和工单。
-- ADMIN 可进入“运行日志”界面，按 `INFO`、`WARN`、`ERROR`、`DEBUG` 查看前后端日志。
-
-## 目录说明
+## 目录
 
 ```text
 .
-├── Core/               # 后端工程：Spring Boot 源码与 Maven 配置
-├── Front/              # 前端工程：Vue 3 + TS 源码
-├── docs/               # 需求、权限和 Agent 提示文档
-├── docker-compose.yml  # 数据库环境定义
-└── README.md           # 项目指南
+├── Core/    # Spring Boot 后端
+├── Front/   # Vue 3 + TypeScript 前端
+├── build/   # Windows 构建与启动脚本
+├── docs/    # 需求、权限与说明文档
+└── README.md
 ```
 
-## Build 脚本
+## 环境要求
 
-本项目依赖 Oracle 21c 数据库、Node.js、Maven 等构建工具，请确保电脑上存在对应工具。
+- Java 17
+- Maven
+- Node.js / npm
+- Oracle Database 21c
 
-个人配置文件存放在 `.env` 中，可以直接复制 `.env.template` 并重命名为 `.env` 以快速启用。
+根目录 `.env` 可由 `.env.template` 复制得到，再按本机数据库环境填写账号、密码和连接串。
 
-`release/` 目录提供面向 Windows 演示环境的一键构建和启动脚本。执行前建议先根据 `.env.template` 准备仓库根目录 `.env`，至少确认 `ORACLE_PASSWORD`、`DB_USERNAME`、`DB_PASSWORD`、`DB_URL` 与当前数据库环境一致。
+## 快速启动
 
-### 一键构建：`build/build.bat`
+前端开发：
+
+```powershell
+cd Front
+npm run dev
+```
+
+前端构建：
+
+```powershell
+cd Front
+npm run build
+```
+
+后端编译：
+
+```powershell
+cd Core
+mvn -q -DskipTests compile
+```
+
+后端测试：
+
+```powershell
+cd Core
+mvn test
+```
+
+Windows 一键构建：
 
 ```powershell
 .\build\build.bat
 ```
 
-### 一键启动：`build/start.bat`
+Windows 一键启动：
 
 ```powershell
 .\build\start.bat
@@ -56,10 +70,26 @@
 .\build\start.bat -b
 ```
 
-### Oracle in Docker
-
-首先保证电脑上存在 Docker 环境：
+如果使用 Docker 启动 Oracle：
 
 ```powershell
 docker compose up -d
 ```
+
+默认开发时区为 `Asia/Shanghai (UTC+8)`。如果重置数据库，请先用 `SYSTEM` 或 `SYSDBA` 执行 `Core/src/main/resources/db/oracle21c-admin-timezone.sql`，重启 Oracle 后，再执行 `Core/src/main/resources/db/oracle21c-init.sql`。应用默认数据库时区也已对齐到 `Asia/Shanghai`。
+
+## 日志
+
+后端文件日志默认写入根目录 `logs/`。
+
+- `logs/access.log`：记录所有 `/api/**` 请求的单行访问日志，字段包含 `requestId`、`userId`、`roleCode`、`method`、`path`、`queryString`、`status`、`elapsedMs`、`remoteAddr`。
+- `logs/application.log`：记录业务操作、异常和模拟任务失败日志，日志行会带上 MDC 中的 `requestId`，方便和访问日志关联。
+
+可以通过环境变量 `APP_LOG_DIR` 或启动参数 `--app.log.dir=...` 覆盖目录。`.\build\start.bat` 会在启动前创建根目录 `logs/`，并显式传入该参数。
+
+## 数据库初始化
+
+数据库初始化入口脚本为 `Core/src/main/resources/db/oracle21c-init.sql`。
+数据库时区管理员脚本为 `Core/src/main/resources/db/oracle21c-admin-timezone.sql`。
+
+执行初始化时请确保 SQL 客户端和脚本文件都按 UTF-8 处理；基础中文展示数据、权限文案和样例名称都依赖 UTF-8 编码，错误的会话编码会导致中文乱码。

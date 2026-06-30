@@ -44,7 +44,7 @@ public interface AuthMapper {
                 #{roleCode},
                 0,
                 NULL,
-                SYSTIMESTAMP,
+                LOCALTIMESTAMP,
                 NULL
             )
             """)
@@ -57,8 +57,8 @@ public interface AuthMapper {
 
     @Update("""
             UPDATE SYS_USER
-            SET LAST_LOGIN_AT = SYSTIMESTAMP,
-                UPDATED_AT = SYSTIMESTAMP
+            SET LAST_LOGIN_AT = LOCALTIMESTAMP,
+                UPDATED_AT = LOCALTIMESTAMP
             WHERE ID = #{id}
             """)
     int updateLastLoginAt(@Param("id") Long id);

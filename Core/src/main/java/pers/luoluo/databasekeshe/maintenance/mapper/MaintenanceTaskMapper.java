@@ -122,9 +122,9 @@ public interface MaintenanceTaskMapper {
                 STATUS = #{status},
                 ASSIGNEE = #{assignee},
                 FEEDBACK = #{feedback},
-                UPDATED_AT = SYSTIMESTAMP,
+                UPDATED_AT = LOCALTIMESTAMP,
                 FINISHED_AT = CASE
-                    WHEN #{status} = 2 THEN COALESCE(FINISHED_AT, SYSTIMESTAMP)
+                    WHEN #{status} = 2 THEN COALESCE(FINISHED_AT, LOCALTIMESTAMP)
                     ELSE NULL
                 END
             WHERE TASK_ID = #{taskId}

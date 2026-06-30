@@ -14,6 +14,7 @@ out/
 .vscode/
 !.vscode/extensions.json
 .history/
+.VSCodeCounter
 
 # 环境变量与敏感信息
 .env
@@ -31,6 +32,7 @@ Core/target/
 Front/node_modules/
 Front/dist/
 Front/dist-ssr/
+logs/
 build/
 !build/*.bat
 output.txt

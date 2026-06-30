@@ -27,6 +27,9 @@ public class MetadataService {
                     row.transformerId(),
                     ignored -> new TransformerBuilder(row)
             );
+            if (row.circuitId() != null) {
+                transformer.circuits.computeIfAbsent(row.circuitId(), ignored -> new CircuitBuilder(row));
+            }
             if (row.pointId() == null) {
                 continue;
             }
@@ -41,7 +44,8 @@ public class MetadataService {
                     row.unit(),
                     row.minLimit(),
                     row.maxLimit(),
-                    row.rateLimit()
+                    row.rateLimit(),
+                    row.pointStatus()
             );
 
             if (row.circuitId() == null) {

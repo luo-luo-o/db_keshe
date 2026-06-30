@@ -1,74 +1,62 @@
 package pers.luoluo.databasekeshe.logging.service;
 
-import java.time.LocalDateTime;
-import java.util.ArrayDeque;
-import java.util.Comparator;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import pers.luoluo.databasekeshe.logging.dto.RuntimeLogLevel;
-import pers.luoluo.databasekeshe.logging.dto.RuntimeLogResponse;
-import pers.luoluo.databasekeshe.logging.dto.RuntimeLogSource;
 
 @Service
 public class RuntimeLogService {
 
-    private static final int MAX_LOGS = 500;
-    private static final int QUERY_LIMIT = 300;
-
-    private final AtomicLong nextId = new AtomicLong(1);
-    private final ArrayDeque<RuntimeLogResponse> logs = new ArrayDeque<>();
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeLogService.class);
+    private static final Pattern SENSITIVE_KV_PATTERN = Pattern.compile("(?i)(password|passwd|pwd|token|authorization)=([^\\s,;]+)");
+    private static final Pattern JSON_PASSWORD_PATTERN = Pattern.compile("(?i)(\"(?:password|passwd|pwd|token|authorization)\"\\s*:\\s*\")([^\"]*)(\")");
 
     public void debug(String message, String context) {
-        append(RuntimeLogLevel.DEBUG, message, context);
+        LOGGER.debug("message={} context={}", sanitize(message), sanitize(context));
     }
 
     public void info(String message, String context) {
-        append(RuntimeLogLevel.INFO, message, context);
+        LOGGER.info("message={} context={}", sanitize(message), sanitize(context));
     }
 
     public void warn(String message, String context) {
-        append(RuntimeLogLevel.WARN, message, context);
+        LOGGER.warn("message={} context={}", sanitize(message), sanitize(context));
     }
 
     public void error(String message, String context) {
-        append(RuntimeLogLevel.ERROR, message, context);
+        LOGGER.error("message={} context={}", sanitize(message), sanitize(context));
     }
 
-    public List<RuntimeLogResponse> list(RuntimeLogLevel minLevel) {
-        RuntimeLogLevel effectiveMinLevel = minLevel == null ? RuntimeLogLevel.INFO : minLevel;
-        synchronized (logs) {
-            return logs.stream()
-                    .filter(log -> weight(log.level()) >= weight(effectiveMinLevel))
-                    .sorted(Comparator.comparing(RuntimeLogResponse::createdAt).reversed())
-                    .limit(QUERY_LIMIT)
-                    .toList();
+    public void error(String message, String context, Throwable throwable) {
+        LOGGER.error("message={} context={}", sanitize(message), sanitize(context), sanitizeThrowable(throwable));
+    }
+
+    private String sanitize(String value) {
+        if (value == null) {
+            return "-";
         }
+
+        String sanitized = value.replace('\r', ' ').replace('\n', ' ').trim();
+        sanitized = SENSITIVE_KV_PATTERN.matcher(sanitized).replaceAll("$1=***");
+        sanitized = JSON_PASSWORD_PATTERN.matcher(sanitized).replaceAll("$1***$3");
+        return sanitized;
     }
 
-    private void append(RuntimeLogLevel level, String message, String context) {
-        RuntimeLogResponse response = new RuntimeLogResponse(
-                nextId.getAndIncrement(),
-                RuntimeLogSource.BACKEND,
-                level,
-                message,
-                context,
-                LocalDateTime.now()
-        );
-        synchronized (logs) {
-            logs.addFirst(response);
-            while (logs.size() > MAX_LOGS) {
-                logs.removeLast();
-            }
+    private Throwable sanitizeThrowable(Throwable throwable) {
+        if (throwable == null) {
+            return null;
         }
-    }
 
-    private int weight(RuntimeLogLevel level) {
-        return switch (level) {
-            case DEBUG -> 10;
-            case INFO -> 20;
-            case WARN -> 30;
-            case ERROR -> 40;
-        };
+        RuntimeException sanitized = new RuntimeException(sanitize(throwable.getMessage()));
+        sanitized.setStackTrace(throwable.getStackTrace());
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause != throwable) {
+            sanitized.initCause(sanitizeThrowable(cause));
+        }
+        for (Throwable suppressed : throwable.getSuppressed()) {
+            sanitized.addSuppressed(sanitizeThrowable(suppressed));
+        }
+        return sanitized;
     }
 }

@@ -12,6 +12,7 @@ public record MeasurePointOptionResponse(
         String unit,
         BigDecimal minLimit,
         BigDecimal maxLimit,
-        BigDecimal rateLimit
+        BigDecimal rateLimit,
+        Integer status
 ) {
 }

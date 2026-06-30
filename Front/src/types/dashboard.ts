@@ -1,28 +1,34 @@
 import type { RoleCode } from './auth'
 
 export type MessageCategory = 'SAMPLE' | 'ALARM' | 'TASK'
+export type DeviceStatus = 0 | 1 | 2
+export type MeasurePointStatus = 0 | 1
+export type CircuitDirection = 'INCOMING' | 'OUTGOING'
+export type PointGroup = 'ELECTRIC_IN' | 'ELECTRIC_OUT' | 'TRANSFORMER' | 'CABINET'
+export type PhaseCode = 'A' | 'B' | 'C' | 'AB' | 'BC' | 'CA' | 'TOTAL' | 'NONE'
 
 export interface MeasurePointOptionResponse {
   id: number
   pointCode: string
   pointName: string
-  pointGroup: string
+  pointGroup: PointGroup
   measureType: string
-  phaseCode: string
+  phaseCode: PhaseCode
   unit?: string
   minLimit?: number
   maxLimit?: number
   rateLimit?: number
+  status: MeasurePointStatus
 }
 
 export interface CircuitOptionResponse {
   circuitId: number
   circuitCode: string
   circuitName: string
-  direction: 'INCOMING' | 'OUTGOING'
+  direction: CircuitDirection
   ratedVoltageKv?: number
   ratedCurrentA?: number
-  status: number
+  status: DeviceStatus
   points: MeasurePointOptionResponse[]
 }
 
@@ -37,10 +43,51 @@ export interface TransformerOptionResponse {
   manufacturer?: string
   oilLevel?: number
   location?: string
-  status: number
+  status: DeviceStatus
   circuits: CircuitOptionResponse[]
   points: MeasurePointOptionResponse[]
 }
+
+export interface CreateTransformerPayload {
+  transformerCode: string
+  transformerName: string
+  ratedCapacityKva?: number
+  ratedVoltageRatio?: string
+  commissionDate?: string
+  manufacturer?: string
+  oilLevel?: number
+  location?: string
+  status: DeviceStatus
+}
+
+export interface UpdateTransformerPayload extends CreateTransformerPayload {}
+
+export interface CreateCircuitPayload {
+  circuitCode: string
+  circuitName: string
+  direction: CircuitDirection
+  ratedVoltageKv?: number
+  ratedCurrentA?: number
+  status: DeviceStatus
+}
+
+export interface UpdateCircuitPayload extends CreateCircuitPayload {}
+
+export interface CreateMeasurePointPayload {
+  circuitId?: number
+  pointCode: string
+  pointName: string
+  pointGroup: PointGroup
+  measureType: string
+  phaseCode: PhaseCode
+  unit?: string
+  minLimit?: number
+  maxLimit?: number
+  rateLimit?: number
+  status: MeasurePointStatus
+}
+
+export interface UpdateMeasurePointPayload extends CreateMeasurePointPayload {}
 
 export interface MessageResponse {
   category: MessageCategory
@@ -84,8 +131,14 @@ export interface HistoryDataRow {
   pointCode?: string
   unit?: string
   sampleTime: string
+  rangeEndTime?: string
   value: number
+  avgValue?: number
+  minValue?: number
+  maxValue?: number
+  sampleCount?: number
   qualityFlag: number
+  granularity?: string
   createdAt: string
 }
 
@@ -143,11 +196,13 @@ export interface SimulationStatusResponse {
   writeCount: number
   alarmCount: number
   taskCount: number
-  sampleIntervalSeconds: number
+  normalIntervalMs: number
+  anomalyIntervalMs: number
+  currentIntervalMs: number
 }
 
 export type RuntimeLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
-export type RuntimeLogSource = 'FRONTEND' | 'BACKEND'
+export type RuntimeLogSource = 'DATABASE'
 
 export interface RuntimeLogResponse {
   id: number
@@ -161,7 +216,7 @@ export interface RuntimeLogResponse {
 export const categoryLabels: Record<MessageCategory, string> = {
   SAMPLE: '采样数据',
   ALARM: '告警记录',
-  TASK: '维保工单',
+  TASK: '维护工单',
 }
 
 export const runtimeLogLevelLabels: Record<RuntimeLogLevel, string> = {
@@ -172,6 +227,15 @@ export const runtimeLogLevelLabels: Record<RuntimeLogLevel, string> = {
 }
 
 export const runtimeLogLevelOptions: RuntimeLogLevel[] = ['INFO', 'WARN', 'ERROR', 'DEBUG']
+
+export const pointGroupLabels: Record<PointGroup, string> = {
+  ELECTRIC_IN: '进线测点',
+  ELECTRIC_OUT: '出线测点',
+  TRANSFORMER: '箱变本体',
+  CABINET: '柜体测点',
+}
+
+export const phaseCodeOptions: PhaseCode[] = ['A', 'B', 'C', 'AB', 'BC', 'CA', 'TOTAL', 'NONE']
 
 export function allowedCategories(roleCode: RoleCode): MessageCategory[] {
   if (roleCode === 'OPERATOR') {

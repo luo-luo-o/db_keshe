@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import DeviceManagementDialog from '../components/DeviceManagementDialog.vue'
 import {
   fetchHistory,
   fetchMessages,
@@ -31,7 +32,6 @@ import {
   type TransformerOptionResponse,
 } from '../types/dashboard'
 import type { AuthSession } from '../types/auth'
-import { appendFrontendLog, clearFrontendLogs, readFrontendLogs } from '../utils/runtimeLog'
 
 const props = defineProps<{
   session: AuthSession
@@ -55,6 +55,14 @@ interface HistoryTimeGroup {
   valueSummary: string
 }
 
+const tabTitles: Record<TabName, string> = {
+  messages: '消息查询',
+  history: '历史数据',
+  tasks: '工单管理',
+  simulation: '模拟测试',
+  logs: '运行日志',
+}
+
 const activeTab = ref<TabName>('messages')
 const transformers = ref<TransformerOptionResponse[]>([])
 const messages = ref<MessageResponse[]>([])
@@ -62,7 +70,6 @@ const historyRows = ref<HistoryDataRow[]>([])
 const tasks = ref<MaintenanceTaskResponse[]>([])
 const simulation = ref<SimulationStatusResponse | null>(null)
 const backendLogs = ref<RuntimeLogResponse[]>([])
-const frontendLogs = ref<RuntimeLogResponse[]>(readFrontendLogs())
 const isLoadingMessages = ref(false)
 const isLoadingHistory = ref(false)
 const isLoadingTasks = ref(false)
@@ -74,17 +81,60 @@ const selectedTransformerStatus = ref<TransformerStatusFilter | null>(null)
 const selectedHistoryGroup = ref<HistoryTimeGroup | null>(null)
 const selectedTask = ref<MaintenanceTaskResponse | null>(null)
 const runtimeLogLevel = ref<RuntimeLogLevel>('INFO')
-const chartEl = ref<HTMLElement>()
+const chartEl = ref<HTMLElement | null>(null)
+const deviceManagementVisible = ref(false)
+
 let simulationPollTimer: number | undefined
 let chart: echarts.ECharts | null = null
+let chartResizeObserver: ResizeObserver | null = null
+
+type SerializedTaskState = {
+  running: Promise<void> | null
+  rerun: boolean
+}
+
+function createSerializedTaskState(): SerializedTaskState {
+  return {
+    running: null,
+    rerun: false,
+  }
+}
+
+async function runSerializedTask(state: SerializedTaskState, task: () => Promise<void>) {
+  if (state.running) {
+    state.rerun = true
+    await state.running
+    return
+  }
+
+  state.running = (async () => {
+    try {
+      do {
+        state.rerun = false
+        await task()
+      } while (state.rerun)
+    } finally {
+      state.running = null
+    }
+  })()
+
+  await state.running
+}
+
+const metadataLoadState = createSerializedTaskState()
+const messageQueryState = createSerializedTaskState()
+const historyQueryState = createSerializedTaskState()
+const taskQueryState = createSerializedTaskState()
+const simulationStatusLoadState = createSerializedTaskState()
+const runtimeLogsLoadState = createSerializedTaskState()
 
 const messageForm = reactive({
   category: '' as '' | MessageCategory,
   transformerId: undefined as number | undefined,
   circuitId: undefined as number | undefined,
   pointId: undefined as number | undefined,
-  startTime: '' as string,
-  endTime: '' as string,
+  startTime: '',
+  endTime: '',
   keyword: '',
 })
 
@@ -92,21 +142,22 @@ const historyForm = reactive({
   transformerId: undefined as number | undefined,
   circuitId: undefined as number | undefined,
   pointId: undefined as number | undefined,
-  startTime: '' as string,
-  endTime: '' as string,
+  startTime: '',
+  endTime: '',
 })
+const historyUseRollingWindow = ref(true)
 
 const taskForm = reactive({
   status: '' as '' | 0 | 1 | 2,
   transformerId: undefined as number | undefined,
   circuitId: undefined as number | undefined,
-  startTime: '' as string,
-  endTime: '' as string,
+  startTime: '',
+  endTime: '',
   keyword: '',
 })
 
 const taskEditForm = reactive({
-  status: 0,
+  status: 0 as 0 | 1 | 2,
   assignee: '',
   feedback: '',
 })
@@ -115,17 +166,7 @@ const categoryOptions = computed(() => allowedCategories(props.session.roleCode)
 const isAdmin = computed(() => props.session.roleCode === 'ADMIN')
 const canQueryTasks = computed(() => ['ADMIN', 'ENGINEER', 'MANAGER'].includes(props.session.roleCode))
 const canEditTasks = computed(() => ['ADMIN', 'ENGINEER'].includes(props.session.roleCode))
-
-const activeTabTitle = computed(() => {
-  const titles: Record<TabName, string> = {
-    messages: '消息查询',
-    history: '历史数据',
-    tasks: '工单管理',
-    simulation: '模拟测试',
-    logs: '运行日志',
-  }
-  return titles[activeTab.value]
-})
+const activeTabTitle = computed(() => tabTitles[activeTab.value])
 
 const messageCircuitOptions = computed(() => circuitsForTransformer(messageForm.transformerId))
 const historyCircuitOptions = computed(() => circuitsForTransformer(historyForm.transformerId))
@@ -183,7 +224,7 @@ const filteredStatusTransformers = computed(() => {
 
 const visibleRuntimeLogs = computed(() => {
   const minWeight = runtimeLogWeight(runtimeLogLevel.value)
-  return [...backendLogs.value, ...frontendLogs.value]
+  return backendLogs.value
     .filter((row) => runtimeLogWeight(row.level) >= minWeight)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, 300)
@@ -191,8 +232,10 @@ const visibleRuntimeLogs = computed(() => {
 
 const groupedHistoryRows = computed<HistoryTimeGroup[]>(() => {
   const groups = new Map<string, HistoryDataRow[]>()
+
   historyRows.value.forEach((row) => {
-    groups.set(row.sampleTime, [...(groups.get(row.sampleTime) ?? []), row])
+    const key = row.sampleTime
+    groups.set(key, [...(groups.get(key) ?? []), row])
   })
 
   return [...groups.entries()]
@@ -201,6 +244,7 @@ const groupedHistoryRows = computed<HistoryTimeGroup[]>(() => {
       const highestQualityFlag = Math.max(...orderedRows.map((row) => row.qualityFlag ?? 0))
       const transformerNames = [...new Set(orderedRows.map((row) => row.transformerName))].join('、')
       const pointNames = orderedRows.map((row) => row.pointName ?? row.pointCode ?? '未知测点')
+
       return {
         sampleTime,
         rows: orderedRows,
@@ -208,7 +252,7 @@ const groupedHistoryRows = computed<HistoryTimeGroup[]>(() => {
         pointSummary: summarizeText(pointNames, 3),
         highestQualityFlag,
         status: historyGroupStatus(highestQualityFlag),
-        valueSummary: summarizeText(orderedRows.map((row) => `${row.pointName ?? row.pointCode}: ${row.value}${row.unit ? ` ${row.unit}` : ''}`), 2),
+        valueSummary: summarizeText(orderedRows.map((row) => historyValueSummary(row)), 2),
       }
     })
     .sort((left, right) => right.sampleTime.localeCompare(left.sampleTime))
@@ -232,12 +276,30 @@ const taskEditDialogVisible = computed({
   },
 })
 
+const canRenderHistoryChart = computed(() => activeTab.value === 'history' && Boolean(historyForm.pointId))
+
+const selectedHistoryPoint = computed(() => {
+  if (!historyForm.pointId) {
+    return null
+  }
+
+  return historyPointOptions.value.find((point) => point.id === historyForm.pointId) ?? null
+})
+
+const orderedHistoryTrendRows = computed(() =>
+  historyRows.value
+    .filter((row) => !historyForm.pointId || row.pointId === historyForm.pointId)
+    .sort((left, right) => left.sampleTime.localeCompare(right.sampleTime)),
+)
+
 onMounted(async () => {
-  appendFrontendLog('INFO', '进入工作台', `${props.session.displayName} / ${props.session.roleCode}`)
-  frontendLogs.value = readFrontendLogs()
   resetHistoryRange()
+  window.addEventListener('resize', handleChartResize)
   await loadMetadata()
-  await Promise.all([queryMessages(), queryHistory(), queryTasks(), loadSimulationStatus(), loadRuntimeLogs()])
+  await Promise.all([
+    loadActiveTabData(),
+    ...(isAdmin.value ? [loadSimulationStatus()] : []),
+  ])
   startSimulationPolling()
 })
 
@@ -245,6 +307,10 @@ onBeforeUnmount(() => {
   if (simulationPollTimer !== undefined) {
     window.clearInterval(simulationPollTimer)
   }
+
+  window.removeEventListener('resize', handleChartResize)
+  disconnectChartResizeObserver()
+  disposeChart()
 })
 
 watch(
@@ -278,6 +344,24 @@ watch(
 )
 
 watch(
+  () => historyForm.startTime,
+  (value, previousValue) => {
+    if (previousValue !== undefined && value !== previousValue) {
+      historyUseRollingWindow.value = false
+    }
+  },
+)
+
+watch(
+  () => historyForm.endTime,
+  (value, previousValue) => {
+    if (previousValue !== undefined && value !== previousValue) {
+      historyUseRollingWindow.value = false
+    }
+  },
+)
+
+watch(
   () => taskForm.transformerId,
   () => {
     taskForm.circuitId = undefined
@@ -285,7 +369,27 @@ watch(
 )
 
 watch(historyRows, () => {
-  void nextTick(renderChart)
+  void syncHistoryChart()
+})
+
+watch(
+  () => historyForm.pointId,
+  () => {
+    void syncHistoryChart()
+  },
+)
+
+watch(
+  () => activeTab.value,
+  () => {
+    void syncHistoryChart()
+    void loadActiveTabData()
+  },
+)
+
+watch(chartEl, () => {
+  attachChartResizeObserver()
+  void syncHistoryChart()
 })
 
 watch(activeTab, (tab) => {
@@ -318,61 +422,151 @@ function pointsForScope(transformerId?: number, circuitId?: number): MeasurePoin
       return transformer.circuits.find((circuit) => circuit.circuitId === circuitId)?.points ?? []
     }
 
-    return [
-      ...transformer.points,
-      ...transformer.circuits.flatMap((circuit) => circuit.points),
-    ]
+    return [...transformer.points, ...transformer.circuits.flatMap((circuit) => circuit.points)]
   })
 }
 
 async function loadMetadata() {
-  isLoadingMetadata.value = true
-  errorMessage.value = ''
-  try {
-    transformers.value = await fetchTransformers(props.session)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingMetadata.value = false
+  await runSerializedTask(metadataLoadState, async () => {
+    isLoadingMetadata.value = true
+    errorMessage.value = ''
+
+    try {
+      transformers.value = await fetchTransformers(props.session)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingMetadata.value = false
+    }
+  })
+}
+
+async function handleMetadataChanged() {
+  await loadMetadata()
+  sanitizeMetadataSelections()
+  await loadActiveTabData()
+}
+
+async function loadActiveTabData(tab: TabName = activeTab.value) {
+  if (tab === 'messages') {
+    await queryMessages()
+    return
+  }
+
+  if (tab === 'history') {
+    await queryHistory()
+    return
+  }
+
+  if (tab === 'tasks' && canQueryTasks.value) {
+    await queryTasks()
+    return
+  }
+
+  if (tab === 'logs' && isAdmin.value) {
+    await loadRuntimeLogs()
   }
 }
 
-async function queryMessages() {
-  isLoadingMessages.value = true
-  errorMessage.value = ''
-  try {
-    messages.value = await fetchMessages(props.session, {
-      category: messageForm.category || undefined,
-      transformerId: messageForm.transformerId,
-      circuitId: messageForm.circuitId,
-      pointId: messageForm.pointId,
-      startTime: toIsoValue(messageForm.startTime),
-      endTime: toIsoValue(messageForm.endTime),
-      keyword: messageForm.keyword.trim() || undefined,
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingMessages.value = false
+async function loadPollingData() {
+  if (activeTab.value === 'messages') {
+    await queryMessages()
+    return
   }
+
+  if (activeTab.value === 'history') {
+    await queryHistory()
+    return
+  }
+
+  if (activeTab.value === 'tasks' && canQueryTasks.value) {
+    await queryTasks()
+  }
+}
+
+function sanitizeMetadataSelections() {
+  const transformerIds = new Set(transformers.value.map((transformer) => transformer.transformerId))
+  const circuitIds = new Set(transformers.value.flatMap((transformer) => transformer.circuits.map((circuit) => circuit.circuitId)))
+  const pointIds = new Set(
+    transformers.value.flatMap((transformer) => [
+      ...transformer.points.map((point) => point.id),
+      ...transformer.circuits.flatMap((circuit) => circuit.points.map((point) => point.id)),
+    ]),
+  )
+
+  if (messageForm.transformerId && !transformerIds.has(messageForm.transformerId)) {
+    messageForm.transformerId = undefined
+  }
+  if (messageForm.circuitId && !circuitIds.has(messageForm.circuitId)) {
+    messageForm.circuitId = undefined
+  }
+  if (messageForm.pointId && !pointIds.has(messageForm.pointId)) {
+    messageForm.pointId = undefined
+  }
+
+  if (historyForm.transformerId && !transformerIds.has(historyForm.transformerId)) {
+    historyForm.transformerId = undefined
+  }
+  if (historyForm.circuitId && !circuitIds.has(historyForm.circuitId)) {
+    historyForm.circuitId = undefined
+  }
+  if (historyForm.pointId && !pointIds.has(historyForm.pointId)) {
+    historyForm.pointId = undefined
+  }
+
+  if (taskForm.transformerId && !transformerIds.has(taskForm.transformerId)) {
+    taskForm.transformerId = undefined
+  }
+  if (taskForm.circuitId && !circuitIds.has(taskForm.circuitId)) {
+    taskForm.circuitId = undefined
+  }
+}
+async function queryMessages() {
+  await runSerializedTask(messageQueryState, async () => {
+    isLoadingMessages.value = true
+    errorMessage.value = ''
+
+    try {
+      messages.value = await fetchMessages(props.session, {
+        category: messageForm.category || undefined,
+        transformerId: messageForm.transformerId,
+        circuitId: messageForm.circuitId,
+        pointId: messageForm.pointId,
+        startTime: toIsoStartValue(messageForm.startTime),
+        endTime: toIsoEndValue(messageForm.endTime),
+        keyword: messageForm.keyword.trim() || undefined,
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingMessages.value = false
+    }
+  })
 }
 
 async function queryHistory() {
-  isLoadingHistory.value = true
-  errorMessage.value = ''
-  try {
-    historyRows.value = await fetchHistory(props.session, {
-      transformerId: historyForm.transformerId,
-      circuitId: historyForm.circuitId,
-      pointId: historyForm.pointId,
-      startTime: toIsoValue(historyForm.startTime),
-      endTime: toIsoValue(historyForm.endTime),
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingHistory.value = false
-  }
+  await runSerializedTask(historyQueryState, async () => {
+    isLoadingHistory.value = true
+    errorMessage.value = ''
+
+    try {
+      if (historyUseRollingWindow.value) {
+        resetHistoryRange()
+      }
+
+      historyRows.value = await fetchHistory(props.session, {
+        transformerId: historyForm.transformerId,
+        circuitId: historyForm.circuitId,
+        pointId: historyForm.pointId,
+        startTime: historyUseRollingWindow.value ? undefined : toIsoStartValue(historyForm.startTime),
+        endTime: historyUseRollingWindow.value ? undefined : toIsoEndValue(historyForm.endTime),
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingHistory.value = false
+    }
+  })
 }
 
 async function queryTasks() {
@@ -380,22 +574,25 @@ async function queryTasks() {
     return
   }
 
-  isLoadingTasks.value = true
-  errorMessage.value = ''
-  try {
-    tasks.value = await fetchTasks(props.session, {
-      status: taskForm.status === '' ? undefined : taskForm.status,
-      transformerId: taskForm.transformerId,
-      circuitId: taskForm.circuitId,
-      startTime: toIsoValue(taskForm.startTime),
-      endTime: toIsoValue(taskForm.endTime),
-      keyword: taskForm.keyword.trim() || undefined,
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingTasks.value = false
-  }
+  await runSerializedTask(taskQueryState, async () => {
+    isLoadingTasks.value = true
+    errorMessage.value = ''
+
+    try {
+      tasks.value = await fetchTasks(props.session, {
+        status: taskForm.status === '' ? undefined : taskForm.status,
+        transformerId: taskForm.transformerId,
+        circuitId: taskForm.circuitId,
+        startTime: toIsoStartValue(taskForm.startTime),
+        endTime: toIsoEndValue(taskForm.endTime),
+        keyword: taskForm.keyword.trim() || undefined,
+      })
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingTasks.value = false
+    }
+  })
 }
 
 async function loadSimulationStatus() {
@@ -403,11 +600,13 @@ async function loadSimulationStatus() {
     return
   }
 
-  try {
-    simulation.value = await fetchSimulationStatus(props.session)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
+  await runSerializedTask(simulationStatusLoadState, async () => {
+    try {
+      simulation.value = await fetchSimulationStatus(props.session)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    }
+  })
 }
 
 function startSimulationPolling() {
@@ -418,11 +617,7 @@ function startSimulationPolling() {
   simulationPollTimer = window.setInterval(() => {
     if (simulation.value?.running) {
       void loadSimulationStatus()
-      void queryMessages()
-      void queryHistory()
-      if (canQueryTasks.value) {
-        void queryTasks()
-      }
+      void loadPollingData()
     }
   }, 1000)
 }
@@ -432,19 +627,23 @@ async function loadRuntimeLogs() {
     return
   }
 
-  isLoadingRuntimeLogs.value = true
-  try {
-    backendLogs.value = await fetchRuntimeLogs(props.session, runtimeLogLevel.value)
-    frontendLogs.value = readFrontendLogs()
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isLoadingRuntimeLogs.value = false
-  }
+  await runSerializedTask(runtimeLogsLoadState, async () => {
+    isLoadingRuntimeLogs.value = true
+    errorMessage.value = ''
+
+    try {
+      backendLogs.value = await fetchRuntimeLogs(props.session, runtimeLogLevel.value)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingRuntimeLogs.value = false
+    }
+  })
 }
 
 async function handleStartSimulation() {
   isSimulationBusy.value = true
+
   try {
     simulation.value = await startSimulation(props.session)
     startSimulationPolling()
@@ -457,14 +656,124 @@ async function handleStartSimulation() {
 
 async function handleStopSimulation() {
   isSimulationBusy.value = true
+
   try {
     simulation.value = await stopSimulation(props.session)
-    await Promise.all([queryMessages(), queryHistory(), queryTasks()])
+    await loadActiveTabData()
   } catch (error) {
     errorMessage.value = getErrorMessage(error)
   } finally {
     isSimulationBusy.value = false
   }
+}
+
+async function handleAnomalyChange(value: string | number | boolean) {
+  isSimulationBusy.value = true
+
+  try {
+    simulation.value = await setSimulationAnomaly(props.session, Boolean(value))
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  } finally {
+    isSimulationBusy.value = false
+  }
+}
+
+async function syncHistoryChart() {
+  await nextTick()
+  await waitForLayout()
+
+  if (!canRenderHistoryChart.value || !chartEl.value) {
+    disposeChart()
+    return
+  }
+
+  if (chartEl.value.clientWidth === 0 || chartEl.value.clientHeight === 0) {
+    await waitForLayout()
+    if (!chartEl.value || chartEl.value.clientWidth === 0 || chartEl.value.clientHeight === 0) {
+      return
+    }
+  }
+
+  if (!chart || chart.getDom() !== chartEl.value) {
+    disposeChart()
+    chart = echarts.init(chartEl.value)
+  }
+
+  renderChart()
+  chart.resize()
+}
+
+function waitForLayout() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+function renderChart() {
+  if (!chart) {
+    return
+  }
+
+  chart.setOption(
+    {
+      tooltip: { trigger: 'axis' },
+      grid: { left: 56, right: 24, top: 28, bottom: 44 },
+      xAxis: {
+        type: 'category',
+        data: orderedHistoryTrendRows.value.map((row) => formatTime(row.sampleTime)),
+        axisLabel: { color: '#64748b', hideOverlap: true },
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#64748b' },
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
+        splitLine: { lineStyle: { color: '#e2e8f0' } },
+      },
+      series: [
+        {
+          name: selectedHistoryPoint.value?.pointName ?? '采样趋势',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          data: orderedHistoryTrendRows.value.map((row) => row.avgValue ?? row.value),
+          lineStyle: { color: '#2563eb', width: 2 },
+          itemStyle: { color: '#2563eb' },
+          areaStyle: { color: 'rgba(37, 99, 235, 0.10)' },
+        },
+      ],
+    },
+    true,
+  )
+}
+
+function handleChartResize() {
+  chart?.resize()
+}
+
+function attachChartResizeObserver() {
+  disconnectChartResizeObserver()
+
+  if (!chartEl.value || typeof ResizeObserver === 'undefined') {
+    return
+  }
+
+  chartResizeObserver = new ResizeObserver(() => {
+    chart?.resize()
+  })
+  chartResizeObserver.observe(chartEl.value)
+}
+
+function disconnectChartResizeObserver() {
+  chartResizeObserver?.disconnect()
+  chartResizeObserver = null
+}
+
+function disposeChart() {
+  chart?.dispose()
+  chart = null
 }
 
 function openHistoryGroup(group: HistoryTimeGroup) {
@@ -473,7 +782,7 @@ function openHistoryGroup(group: HistoryTimeGroup) {
 
 function openTaskEditor(task: MaintenanceTaskResponse) {
   selectedTask.value = task
-  taskEditForm.status = task.status as 0 | 1 | 2
+  taskEditForm.status = (task.status as 0 | 1 | 2) ?? 0
   taskEditForm.assignee = task.assignee || props.session.displayName
   taskEditForm.feedback = task.feedback || ''
 }
@@ -485,6 +794,7 @@ async function submitTaskUpdate() {
 
   isLoadingTasks.value = true
   errorMessage.value = ''
+
   try {
     const updatedTask = await updateTask(props.session, selectedTask.value.taskId, {
       status: taskEditForm.status,
@@ -561,6 +871,7 @@ function renderChart() {
 }
 
 function resetHistoryRange() {
+  historyUseRollingWindow.value = true
   historyForm.startTime = toLocalInputValue(new Date(Date.now() - 60 * 60 * 1000))
   historyForm.endTime = toLocalInputValue(new Date())
 }
@@ -688,13 +999,8 @@ function runtimeLogWeight(level: RuntimeLogLevel) {
     WARN: 30,
     ERROR: 40,
   }
-  return weights[level]
-}
 
-function clearFrontendRuntimeLogs() {
-  clearFrontendLogs()
-  appendFrontendLog('INFO', '前端日志已清空')
-  frontendLogs.value = readFrontendLogs()
+  return weights[level]
 }
 
 function messageStatusLabel(row: MessageResponse) {
@@ -723,11 +1029,42 @@ function messageStatusType(row: MessageResponse) {
 
 function summarizeText(values: string[], limit: number) {
   const visibleValues = values.filter(Boolean)
+
   if (visibleValues.length <= limit) {
     return visibleValues.join('、')
   }
 
   return `${visibleValues.slice(0, limit).join('、')} 等 ${visibleValues.length} 项`
+}
+
+function historyValueSummary(row: HistoryDataRow) {
+  const baseValue = row.avgValue ?? row.value
+  const unit = row.unit ? ` ${row.unit}` : ''
+  const rangeParts = [
+    row.minValue !== undefined ? `最小 ${row.minValue}` : '',
+    row.maxValue !== undefined ? `最大 ${row.maxValue}` : '',
+  ].filter(Boolean)
+  const countPart = row.sampleCount !== undefined ? `样本数 ${row.sampleCount}` : ''
+  const detail = [...rangeParts, countPart].filter(Boolean).join(' / ')
+  const granularity = historyGranularityLabel(row.granularity)
+  const granularityPrefix = granularity ? `[${granularity}] ` : ''
+  return `${granularityPrefix}${row.pointName ?? row.pointCode ?? '测点'}: ${baseValue}${unit}${detail ? ` (${detail})` : ''}`
+}
+
+function historyGranularityLabel(granularity?: string) {
+  if (!granularity) {
+    return ''
+  }
+
+  if (granularity === 'RAW') {
+    return '实时'
+  }
+
+  if (granularity === 'DAILY') {
+    return '日归档'
+  }
+
+  return granularity
 }
 
 function formatTime(value?: string) {
@@ -744,12 +1081,20 @@ function toLocalInputValue(date: Date) {
   return local.toISOString().slice(0, 16)
 }
 
-function toIsoValue(value: string) {
+function toIsoStartValue(value: string) {
   if (!value) {
     return undefined
   }
 
   return value.length === 16 ? `${value}:00` : value
+}
+
+function toIsoEndValue(value: string) {
+  if (!value) {
+    return undefined
+  }
+
+  return value.length === 16 ? `${value}:59` : value
 }
 
 function getErrorMessage(error: unknown) {
@@ -758,16 +1103,6 @@ function getErrorMessage(error: unknown) {
 
 function handleMenuSelect(key: string) {
   activeTab.value = key as TabName
-  appendFrontendLog('INFO', `切换到 ${activeTabTitle.value}`)
-  frontendLogs.value = readFrontendLogs()
-
-  if (activeTab.value === 'logs') {
-    void loadRuntimeLogs()
-  }
-
-  if (activeTab.value === 'tasks') {
-    void queryTasks()
-  }
 }
 </script>
 
@@ -863,9 +1198,14 @@ function handleMenuSelect(key: string) {
       <!-- ── Messages tab ──────────────────────────────────── -->
       <section v-if="activeTab === 'messages'" class="panel">
         <el-form class="query-form" :model="messageForm" label-position="top">
-          <el-form-item label="消息类型">
+          <el-form-item label="类型">
             <el-select v-model="messageForm.category" clearable placeholder="全部类型">
-              <el-option v-for="category in categoryOptions" :key="category" :label="categoryLabels[category]" :value="category" />
+              <el-option
+                v-for="category in categoryOptions"
+                :key="category"
+                :label="categoryLabels[category]"
+                :value="category"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="箱变">
@@ -905,7 +1245,7 @@ function handleMenuSelect(key: string) {
             <el-input v-model="messageForm.endTime" type="datetime-local" />
           </el-form-item>
           <el-form-item label="关键词">
-            <el-input v-model="messageForm.keyword" clearable placeholder="箱变/回路/测点/告警" />
+            <el-input v-model="messageForm.keyword" clearable placeholder="箱变/回路/测点/负责人" />
           </el-form-item>
           <el-form-item class="query-actions">
             <el-button type="primary" :loading="isLoadingMessages" @click="queryMessages">查询</el-button>
@@ -913,7 +1253,7 @@ function handleMenuSelect(key: string) {
         </el-form>
 
         <el-table :data="messages" border stripe height="520" v-loading="isLoadingMessages">
-          <el-table-column label="类型" width="110">
+          <el-table-column label="类型" width="120">
             <template #default="{ row }">
               <el-tag>{{ categoryLabels[row.category as MessageCategory] }}</el-tag>
             </template>
@@ -962,7 +1302,7 @@ function handleMenuSelect(key: string) {
             </el-select>
           </el-form-item>
           <el-form-item label="测点">
-            <el-select v-model="historyForm.pointId" clearable filterable placeholder="全部测点">
+            <el-select v-model="historyForm.pointId" clearable filterable placeholder="选择单个测点以展示趋势图">
               <el-option
                 v-for="point in historyPointOptions"
                 :key="point.id"
@@ -983,15 +1323,27 @@ function handleMenuSelect(key: string) {
           </el-form-item>
         </el-form>
 
-        <div ref="chartEl" class="history-chart"></div>
+        <div v-if="canRenderHistoryChart" class="history-chart-card">
+          <div class="history-chart-header">
+            <div>
+              <strong>{{ selectedHistoryPoint?.pointName ?? '已选测点' }}</strong>
+              <p>{{ selectedHistoryPoint?.pointCode ?? '' }}</p>
+            </div>
+            <span class="history-chart-meta">{{ orderedHistoryTrendRows.length }} 个采样点</span>
+          </div>
+          <div ref="chartEl" class="history-chart"></div>
+        </div>
+        <div v-else class="history-chart-empty">
+          请选择单个测点以渲染趋势图，多测点查询结果仍可在下表查看。
+        </div>
 
         <el-table :data="groupedHistoryRows" border stripe height="340" v-loading="isLoadingHistory" @row-click="openHistoryGroup">
           <el-table-column prop="sampleTime" label="采样时间" min-width="170">
             <template #default="{ row }">{{ formatTime(row.sampleTime) }}</template>
           </el-table-column>
           <el-table-column prop="transformerNames" label="箱变" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="pointSummary" label="测点汇总" min-width="190" show-overflow-tooltip />
-          <el-table-column prop="valueSummary" label="采样值" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="pointSummary" label="测点汇总" min-width="210" show-overflow-tooltip />
+          <el-table-column prop="valueSummary" label="采样值" min-width="260" show-overflow-tooltip />
           <el-table-column label="质量" width="110">
             <template #default="{ row }">
               <el-tag :type="historyGroupStatusType(row.status)">{{ historyGroupStatusLabel(row.status) }}</el-tag>
@@ -1046,7 +1398,7 @@ function handleMenuSelect(key: string) {
 
         <el-table :data="tasks" border stripe height="520" v-loading="isLoadingTasks">
           <el-table-column prop="taskId" label="工单号" width="100" />
-          <el-table-column label="状态" width="110">
+          <el-table-column label="状态" width="120">
             <template #default="{ row }">
               <el-tag :type="taskStatusType(row.status)">{{ taskStatusLabel(row.status) }}</el-tag>
             </template>
@@ -1075,7 +1427,11 @@ function handleMenuSelect(key: string) {
         <div class="simulation-header">
           <div>
             <h2>秒级模拟采集</h2>
-            <p>固定每 {{ simulation?.sampleIntervalSeconds ?? 1 }} 秒写入一次采样。异常开关打开后，模拟值越限并生成告警和工单。</p>
+            <p>
+              常规采样间隔 {{ simulation?.normalIntervalMs ?? 0 }} ms，异常采样间隔
+              {{ simulation?.anomalyIntervalMs ?? 0 }} ms，当前生效周期为
+              {{ simulation?.currentIntervalMs ?? 0 }} ms。
+            </p>
           </div>
           <el-tag :type="simulation?.running ? 'success' : 'info'">
             {{ simulation?.running ? '运行中' : '已停止' }}
@@ -1130,27 +1486,21 @@ function handleMenuSelect(key: string) {
             />
           </el-select>
           <el-button :loading="isLoadingRuntimeLogs" @click="loadRuntimeLogs">刷新</el-button>
-          <el-button @click="clearFrontendRuntimeLogs">清空前端日志</el-button>
         </div>
+
+        <div class="history-chart-empty logs-hint">仅展示数据库业务日志，不显示前端本地日志。</div>
 
         <el-table :data="visibleRuntimeLogs" border stripe height="560" v-loading="isLoadingRuntimeLogs">
           <el-table-column prop="createdAt" label="时间" min-width="170">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-          </el-table-column>
-          <el-table-column label="来源" width="120">
-            <template #default="{ row }">
-              <el-tag :type="row.source === 'BACKEND' ? 'primary' : 'success'">
-                {{ row.source }}
-              </el-tag>
-            </template>
           </el-table-column>
           <el-table-column label="级别" width="100">
             <template #default="{ row }">
               <el-tag :type="runtimeLogTagType(row.level)">{{ runtimeLogLevelLabels[row.level as RuntimeLogLevel] }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="message" label="消息" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="context" label="上下文" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="message" label="消息" min-width="240" show-overflow-tooltip />
+          <el-table-column prop="context" label="上下文" min-width="280" show-overflow-tooltip />
         </el-table>
       </section>
     </main>
@@ -1161,7 +1511,7 @@ function handleMenuSelect(key: string) {
         <el-table-column prop="transformerCode" label="编码" min-width="130" />
         <el-table-column prop="transformerName" label="箱变" min-width="160" />
         <el-table-column prop="ratedCapacityKva" label="额定容量(kVA)" min-width="130" />
-        <el-table-column prop="ratedVoltageRatio" label="电压比" min-width="110" />
+        <el-table-column prop="ratedVoltageRatio" label="电压比" min-width="120" />
         <el-table-column prop="location" label="位置" min-width="180" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
@@ -1169,19 +1519,39 @@ function handleMenuSelect(key: string) {
           </template>
         </el-table-column>
         <el-table-column label="测点数" width="100">
-          <template #default="{ row }">{{ row.points.length + row.circuits.reduce((total: number, circuit: CircuitOptionResponse) => total + circuit.points.length, 0) }}</template>
+          <template #default="{ row }">
+            {{ row.points.length + row.circuits.reduce((total: number, circuit: CircuitOptionResponse) => total + circuit.points.length, 0) }}
+          </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="historyDetailDialogVisible" :title="`采样明细 ${formatTime(selectedHistoryGroup?.sampleTime)}`" width="900px">
+    <el-dialog v-model="historyDetailDialogVisible" :title="`采样明细 ${formatTime(selectedHistoryGroup?.sampleTime)}`" width="960px">
       <el-table :data="selectedHistoryGroup?.rows ?? []" border stripe max-height="460">
         <el-table-column prop="transformerName" label="箱变" min-width="150" />
         <el-table-column prop="circuitName" label="回路" min-width="130" />
         <el-table-column prop="pointName" label="测点" min-width="150" />
         <el-table-column prop="pointCode" label="编码" min-width="170" />
-        <el-table-column label="数值" min-width="120">
-          <template #default="{ row }">{{ row.value }}{{ row.unit ? ` ${row.unit}` : '' }}</template>
+        <el-table-column label="时间范围" min-width="220">
+          <template #default="{ row }">
+            {{ formatTime(row.sampleTime) }} 至 {{ formatTime(row.rangeEndTime ?? row.sampleTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="数值" min-width="180">
+          <template #default="{ row }">
+            {{ row.avgValue ?? row.value }}{{ row.unit ? ` ${row.unit}` : '' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="最小 / 最大" min-width="150">
+          <template #default="{ row }">
+            {{ row.minValue ?? '-' }} / {{ row.maxValue ?? '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="sampleCount" label="样本数" width="90" />
+        <el-table-column label="粒度" width="110">
+          <template #default="{ row }">
+            {{ historyGranularityLabel(row.granularity) || '-' }}
+          </template>
         </el-table-column>
         <el-table-column label="质量" width="100">
           <template #default="{ row }">
@@ -1395,6 +1765,11 @@ function handleMenuSelect(key: string) {
   margin-bottom: 22px;
   padding-bottom: 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.topbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .topbar h1 {
@@ -1942,7 +2317,9 @@ function handleMenuSelect(key: string) {
     grid-template-columns: 1fr;
   }
 
-  .topbar {
+  .topbar,
+  .simulation-header,
+  .history-chart-header {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;

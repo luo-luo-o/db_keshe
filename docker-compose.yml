@@ -5,9 +5,9 @@ services:
     ports:
       - "1521:1521"
     environment:
-      - ORACLE_PASSWORD=oracle
-      - APP_USER=myuser
-      - APP_USER_PASSWORD=mypassword
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD:?ORACLE_PASSWORD is required in .env}
+      - APP_USER=${DB_USERNAME:?DB_USERNAME is required in .env}
+      - APP_USER_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required in .env}
       - TZ=Asia/Shanghai
       - ORA_SDTZ=Asia/Shanghai
     volumes:

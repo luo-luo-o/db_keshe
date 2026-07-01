@@ -19,6 +19,8 @@ set JAR_NAME=database-keshe-0.0.1-SNAPSHOT.jar
 set TARGET_JAR=%~dp0%JAR_NAME%
 set SOURCE_JAR=%ROOT_DIR%\Core\target\%JAR_NAME%
 set LOG_DIR=%ROOT_DIR%\logs
+set ENV_FILE=%ROOT_DIR%\.env
+set SPRING_CONFIG_IMPORT=optional:file:%ENV_FILE%[.properties]
 
 set BG_MODE=false
 if "%1"=="-b" set BG_MODE=true
@@ -27,6 +29,9 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 echo %CYAN%======================================================%RESET% 
 echo    %CYAN%PSM-Smart 变电站监控系统 - 演示模式%RESET% 
 echo %CYAN%======================================================%RESET% 
+
+call :LOAD_ENV_FILE
+if !errorlevel! neq 0 goto :EXIT_SCRIPT
 
 :: 4. 数据库检查 
 echo [%CYAN%1/3%RESET%] Checking Environment...
@@ -174,10 +179,10 @@ if defined TARGET_PID (
 echo [%CYAN%3/3%RESET%] Starting Service...
 if "%BG_MODE%"=="true" (
     echo [Info] %YELLOW%Running in BACKGROUND mode.%RESET%
-    start /b java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env" --app.log.dir="%LOG_DIR%"
+    start /b java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import="%SPRING_CONFIG_IMPORT%" --app.log.dir="%LOG_DIR%"
 ) else (
     echo [Info] %CYAN%Running in FOREGROUND mode.%RESET%
-    java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import=optional:file:"%ROOT_DIR%\.env" --app.log.dir="%LOG_DIR%"
+    java -Dfile.encoding=UTF-8 -jar "%TARGET_JAR%" --spring.config.import="%SPRING_CONFIG_IMPORT%" --app.log.dir="%LOG_DIR%"
 )
 
 :EXIT_SCRIPT
@@ -187,26 +192,39 @@ echo %GREEN%[Finished] Script execution completed.%RESET%
 pause
 exit /b
 
+:LOAD_ENV_FILE
+if not exist "%ENV_FILE%" (
+    echo [Error] %RED%.env file was not found: %ENV_FILE%%RESET%
+    exit /b 1
+)
+
+for /f "usebackq eol=# tokens=1,* delims==" %%a in ("%ENV_FILE%") do (
+    if not "%%a"=="" set "%%a=%%b"
+)
+
+call :REQUIRE_ENV_VAR ORACLE_PASSWORD
+if !errorlevel! neq 0 exit /b 1
+call :REQUIRE_ENV_VAR DB_USERNAME
+if !errorlevel! neq 0 exit /b 1
+call :REQUIRE_ENV_VAR DB_PASSWORD
+if !errorlevel! neq 0 exit /b 1
+call :REQUIRE_ENV_VAR DB_URL
+if !errorlevel! neq 0 exit /b 1
+exit /b 0
+
+:REQUIRE_ENV_VAR
+if not defined %~1 (
+    echo [Error] %RED%%~1 is required in %ENV_FILE%%RESET%
+    exit /b 1
+)
+exit /b 0
+
 :PREPARE_LOCAL_ORACLE
 where sqlplus > nul 2> nul
 if !errorlevel! neq 0 (
     echo [Error] %RED%Local Oracle found, but sqlplus was not found in PATH.%RESET%
     echo [Error] %RED%Cannot create or initialize local database automatically.%RESET%
     exit /b 1
-)
-
-set "ORACLE_PASSWORD=oracle"
-set "DB_USERNAME=psm_app"
-set "DB_PASSWORD=psm_app_123"
-set "DB_URL=jdbc:oracle:thin:@//localhost:1521/XEPDB1"
-
-if exist "%ROOT_DIR%\.env" (
-    for /f "usebackq tokens=1,* delims==" %%a in ("%ROOT_DIR%\.env") do (
-        if /I "%%a"=="ORACLE_PASSWORD" set "ORACLE_PASSWORD=%%b"
-        if /I "%%a"=="DB_USERNAME" set "DB_USERNAME=%%b"
-        if /I "%%a"=="DB_PASSWORD" set "DB_PASSWORD=%%b"
-        if /I "%%a"=="DB_URL" set "DB_URL=%%b"
-    )
 )
 
 set "LOCAL_DB_CONNECT=!DB_URL!"

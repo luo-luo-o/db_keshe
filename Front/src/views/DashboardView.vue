@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import DeviceManagementDialog from '../components/DeviceManagementDialog.vue'
 import {
   fetchHistory,
   fetchMessages,
@@ -82,7 +81,6 @@ const selectedHistoryGroup = ref<HistoryTimeGroup | null>(null)
 const selectedTask = ref<MaintenanceTaskResponse | null>(null)
 const runtimeLogLevel = ref<RuntimeLogLevel>('INFO')
 const chartEl = ref<HTMLElement | null>(null)
-const deviceManagementVisible = ref(false)
 
 let simulationPollTimer: number | undefined
 let chart: echarts.ECharts | null = null
@@ -392,18 +390,6 @@ watch(chartEl, () => {
   void syncHistoryChart()
 })
 
-watch(activeTab, (tab) => {
-  if (tab === 'history') {
-    void nextTick(() => {
-      if (chartEl.value) {
-        chart?.dispose()
-        chart = null
-        renderChart()
-      }
-    })
-  }
-})
-
 function circuitsForTransformer(transformerId?: number): CircuitOptionResponse[] {
   if (!transformerId) {
     return transformers.value.flatMap((transformer) => transformer.circuits)
@@ -439,12 +425,6 @@ async function loadMetadata() {
       isLoadingMetadata.value = false
     }
   })
-}
-
-async function handleMetadataChanged() {
-  await loadMetadata()
-  sanitizeMetadataSelections()
-  await loadActiveTabData()
 }
 
 async function loadActiveTabData(tab: TabName = activeTab.value) {
@@ -484,43 +464,6 @@ async function loadPollingData() {
   }
 }
 
-function sanitizeMetadataSelections() {
-  const transformerIds = new Set(transformers.value.map((transformer) => transformer.transformerId))
-  const circuitIds = new Set(transformers.value.flatMap((transformer) => transformer.circuits.map((circuit) => circuit.circuitId)))
-  const pointIds = new Set(
-    transformers.value.flatMap((transformer) => [
-      ...transformer.points.map((point) => point.id),
-      ...transformer.circuits.flatMap((circuit) => circuit.points.map((point) => point.id)),
-    ]),
-  )
-
-  if (messageForm.transformerId && !transformerIds.has(messageForm.transformerId)) {
-    messageForm.transformerId = undefined
-  }
-  if (messageForm.circuitId && !circuitIds.has(messageForm.circuitId)) {
-    messageForm.circuitId = undefined
-  }
-  if (messageForm.pointId && !pointIds.has(messageForm.pointId)) {
-    messageForm.pointId = undefined
-  }
-
-  if (historyForm.transformerId && !transformerIds.has(historyForm.transformerId)) {
-    historyForm.transformerId = undefined
-  }
-  if (historyForm.circuitId && !circuitIds.has(historyForm.circuitId)) {
-    historyForm.circuitId = undefined
-  }
-  if (historyForm.pointId && !pointIds.has(historyForm.pointId)) {
-    historyForm.pointId = undefined
-  }
-
-  if (taskForm.transformerId && !transformerIds.has(taskForm.transformerId)) {
-    taskForm.transformerId = undefined
-  }
-  if (taskForm.circuitId && !circuitIds.has(taskForm.circuitId)) {
-    taskForm.circuitId = undefined
-  }
-}
 async function queryMessages() {
   await runSerializedTask(messageQueryState, async () => {
     isLoadingMessages.value = true
@@ -809,65 +752,6 @@ async function submitTaskUpdate() {
   } finally {
     isLoadingTasks.value = false
   }
-}
-
-async function handleAnomalyChange(value: string | number | boolean) {
-  isSimulationBusy.value = true
-  try {
-    simulation.value = await setSimulationAnomaly(props.session, Boolean(value))
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    isSimulationBusy.value = false
-  }
-}
-
-function renderChart() {
-  if (!chartEl.value) {
-    return
-  }
-
-  /* 如果旧实例绑定的 DOM 已不在文档中（v-if 切换导致），则销毁重建 */
-  if (chart && !document.body.contains(chart.getDom())) {
-    chart.dispose()
-    chart = null
-  }
-
-  chart ??= echarts.init(chartEl.value)
-  const orderedRows = [...historyRows.value].reverse()
-  chart.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 48, right: 20, top: 24, bottom: 40 },
-    xAxis: {
-      type: 'category',
-      data: orderedRows.map((row) => formatTime(row.sampleTime)),
-      axisLabel: { color: '#64748B' },
-      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
-      axisTick: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: '#64748B' },
-      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
-      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
-    },
-    series: [
-      {
-        name: '采样值',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 5,
-        data: orderedRows.map((row) => row.value),
-        lineStyle: { color: '#60A5FA', width: 2.5, shadowBlur: 8, shadowColor: 'rgba(96,165,250,0.35)' },
-        itemStyle: { color: '#60A5FA' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(59,130,246,0.18)' },
-          { offset: 1, color: 'rgba(59,130,246,0.02)' },
-        ])},
-      },
-    ],
-  })
 }
 
 function resetHistoryRange() {

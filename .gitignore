@@ -33,6 +33,7 @@ Front/node_modules/
 Front/dist/
 Front/dist-ssr/
 logs/
-build/
+build/*
 !build/*.bat
+!build/*.sh
 output.txt

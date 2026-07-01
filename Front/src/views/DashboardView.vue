@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import DeviceManagementDialog from '../components/DeviceManagementDialog.vue'
 import {
   createBackup,
   fetchHistory,
@@ -92,6 +93,7 @@ const isLoadingBackups = ref(false)
 const isBackupBusy = ref(false)
 const isLoadingRuntimeLogs = ref(false)
 const errorMessage = ref('')
+const deviceManagementVisible = ref(false)
 const selectedTransformerStatus = ref<TransformerStatusFilter | null>(null)
 const selectedHistoryGroup = ref<HistoryTimeGroup | null>(null)
 const selectedTask = ref<MaintenanceTaskResponse | null>(null)
@@ -442,12 +444,84 @@ async function loadMetadata() {
 
     try {
       transformers.value = await fetchTransformers(props.session)
+      sanitizeDeviceFilters()
     } catch (error) {
       errorMessage.value = getErrorMessage(error)
     } finally {
       isLoadingMetadata.value = false
     }
   })
+}
+
+async function handleDeviceChanged() {
+  await loadMetadata()
+  await loadActiveTabData()
+}
+
+function sanitizeDeviceFilters() {
+  sanitizeMessageFilters()
+  sanitizeHistoryFilters()
+  sanitizeTaskFilters()
+}
+
+function sanitizeMessageFilters() {
+  if (messageForm.transformerId && !hasTransformer(messageForm.transformerId)) {
+    messageForm.transformerId = undefined
+    messageForm.circuitId = undefined
+    messageForm.pointId = undefined
+    return
+  }
+
+  if (messageForm.circuitId && !hasCircuitInScope(messageForm.transformerId, messageForm.circuitId)) {
+    messageForm.circuitId = undefined
+    messageForm.pointId = undefined
+  }
+
+  if (messageForm.pointId && !hasPointInScope(messageForm.transformerId, messageForm.circuitId, messageForm.pointId)) {
+    messageForm.pointId = undefined
+  }
+}
+
+function sanitizeHistoryFilters() {
+  if (historyForm.transformerId && !hasTransformer(historyForm.transformerId)) {
+    historyForm.transformerId = undefined
+    historyForm.circuitId = undefined
+    historyForm.pointId = undefined
+    return
+  }
+
+  if (historyForm.circuitId && !hasCircuitInScope(historyForm.transformerId, historyForm.circuitId)) {
+    historyForm.circuitId = undefined
+    historyForm.pointId = undefined
+  }
+
+  if (historyForm.pointId && !hasPointInScope(historyForm.transformerId, historyForm.circuitId, historyForm.pointId)) {
+    historyForm.pointId = undefined
+  }
+}
+
+function sanitizeTaskFilters() {
+  if (taskForm.transformerId && !hasTransformer(taskForm.transformerId)) {
+    taskForm.transformerId = undefined
+    taskForm.circuitId = undefined
+    return
+  }
+
+  if (taskForm.circuitId && !hasCircuitInScope(taskForm.transformerId, taskForm.circuitId)) {
+    taskForm.circuitId = undefined
+  }
+}
+
+function hasTransformer(transformerId: number) {
+  return transformers.value.some((transformer) => transformer.transformerId === transformerId)
+}
+
+function hasCircuitInScope(transformerId: number | undefined, circuitId: number) {
+  return circuitsForTransformer(transformerId).some((circuit) => circuit.circuitId === circuitId)
+}
+
+function hasPointInScope(transformerId: number | undefined, circuitId: number | undefined, pointId: number) {
+  return pointsForScope(transformerId, circuitId).some((point) => point.id === pointId)
 }
 
 async function loadActiveTabData(tab: TabName = activeTab.value) {
@@ -725,13 +799,20 @@ async function handleCreateBackup() {
     backupForm.snapshotName = ''
     backupForm.note = ''
   } catch (error) {
-    errorMessage.value = getErrorMessage(error)
+    const message = getErrorMessage(error)
+    await loadBackups()
+    errorMessage.value = message
   } finally {
     isBackupBusy.value = false
   }
 }
 
 async function handleRestoreBackup(snapshot: BackupSnapshotResponse) {
+  if (!canRestoreBackup(snapshot)) {
+    errorMessage.value = '当前备份不可回溯'
+    return
+  }
+
   if (!window.confirm(`将回溯到备份“${snapshot.snapshotName}”，当前业务数据会被覆盖。继续？`)) {
     return
   }
@@ -746,7 +827,9 @@ async function handleRestoreBackup(snapshot: BackupSnapshotResponse) {
     await Promise.all([loadMetadata(), loadSimulationStatus(), loadBackups()])
     await loadActiveTabData()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error)
+    const message = getErrorMessage(error)
+    await loadBackups()
+    errorMessage.value = message
   } finally {
     isBackupBusy.value = false
   }
@@ -1006,6 +1089,50 @@ function runtimeLogTagType(level: RuntimeLogLevel) {
   return 'success'
 }
 
+function backupStatusLabel(status?: BackupSnapshotResponse['status']) {
+  if (status === 'SUCCESS') {
+    return '成功'
+  }
+
+  if (status === 'CREATING') {
+    return '创建中'
+  }
+
+  if (status === 'RESTORING') {
+    return '回溯中'
+  }
+
+  if (status === 'RESTORE_FAILED') {
+    return '回溯失败'
+  }
+
+  return '失败'
+}
+
+function backupStatusType(status?: BackupSnapshotResponse['status']) {
+  if (status === 'SUCCESS') {
+    return 'success'
+  }
+
+  if (status === 'CREATING' || status === 'RESTORING') {
+    return 'warning'
+  }
+
+  return 'danger'
+}
+
+function canRestoreBackup(snapshot: BackupSnapshotResponse) {
+  return snapshot.status === 'SUCCESS' || snapshot.status === 'RESTORE_FAILED'
+}
+
+function backupErrorSummary(value?: string) {
+  if (!value) {
+    return '-'
+  }
+
+  return value.replace(/\s+/g, ' ').trim()
+}
+
 function runtimeLogWeight(level: RuntimeLogLevel) {
   const weights: Record<RuntimeLogLevel, number> = {
     DEBUG: 10,
@@ -1176,7 +1303,10 @@ function handleMenuSelect(key: string) {
           <h1>{{ activeTabTitle }}</h1>
           <p>{{ roleLabels[props.session.roleCode] }} · {{ props.session.displayName }}</p>
         </div>
-        <el-button class="logout-btn" @click="emit('logout')">退出登录</el-button>
+        <div class="topbar-actions">
+          <el-button v-if="isAdmin" class="device-manage-btn" @click="deviceManagementVisible = true">设备管理</el-button>
+          <el-button class="logout-btn" @click="emit('logout')">退出登录</el-button>
+        </div>
       </header>
 
       <el-alert v-if="errorMessage" class="error-alert" type="error" :title="errorMessage" show-icon closable @close="errorMessage = ''" />
@@ -1545,14 +1675,28 @@ function handleMenuSelect(key: string) {
         <el-table :data="backups" border stripe height="560" v-loading="isLoadingBackups || isBackupBusy">
           <el-table-column prop="id" label="编号" width="90" />
           <el-table-column prop="snapshotName" label="备份名称" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
-          <el-table-column label="数据量" min-width="220">
+          <el-table-column label="状态" width="100">
             <template #default="{ row }">
-              箱变 {{ row.transformerCount }} / 测点 {{ row.pointCount }} / 采样 {{ row.rawDataCount }}
+              <el-tag :type="backupStatusType(row.status)">{{ backupStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="告警/工单" min-width="130">
-            <template #default="{ row }">{{ row.alarmCount }} / {{ row.taskCount }}</template>
+          <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="dumpFileName" label="Dump 文件" min-width="220" show-overflow-tooltip />
+          <el-table-column label="日志文件" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.restoreLogFileName || row.logFileName || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="数据量" min-width="280">
+            <template #default="{ row }">
+              箱变 {{ row.transformerCount }} / 回路 {{ row.circuitCount }} / 测点 {{ row.pointCount }} / 采样 {{ row.rawDataCount }}
+            </template>
+          </el-table-column>
+          <el-table-column label="归档/门禁/告警/工单" min-width="190">
+            <template #default="{ row }">
+              {{ row.archiveCount }} / {{ row.doorLogCount }} / {{ row.alarmCount }} / {{ row.taskCount }}
+            </template>
+          </el-table-column>
+          <el-table-column label="错误摘要" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ backupErrorSummary(row.errorMessage) }}</template>
           </el-table-column>
           <el-table-column prop="createdBy" label="创建人" width="110" />
           <el-table-column prop="createdAt" label="创建时间" min-width="170">
@@ -1563,7 +1707,7 @@ function handleMenuSelect(key: string) {
           </el-table-column>
           <el-table-column label="操作" width="110" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" type="danger" @click="handleRestoreBackup(row)">回溯</el-button>
+              <el-button size="small" type="danger" :disabled="!canRestoreBackup(row)" @click="handleRestoreBackup(row)">回溯</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -1679,6 +1823,14 @@ function handleMenuSelect(key: string) {
         <el-button type="primary" :loading="isLoadingTasks" @click="submitTaskUpdate">保存</el-button>
       </template>
     </el-dialog>
+
+    <DeviceManagementDialog
+      v-if="isAdmin"
+      v-model="deviceManagementVisible"
+      :session="props.session"
+      :transformers="transformers"
+      @changed="handleDeviceChanged"
+    />
   </div>
 </template>
 
@@ -1882,14 +2034,16 @@ function handleMenuSelect(key: string) {
   letter-spacing: 0.5px;
 }
 
-.logout-btn {
+.logout-btn,
+.device-manage-btn {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   background: rgba(255, 255, 255, 0.04) !important;
   color: #94A3B8 !important;
   transition: all 0.15s ease;
 }
 
-.logout-btn:hover {
+.logout-btn:hover,
+.device-manage-btn:hover {
   border-color: rgba(59, 130, 246, 0.35) !important;
   background: rgba(59, 130, 246, 0.08) !important;
   color: #F1F5F9 !important;

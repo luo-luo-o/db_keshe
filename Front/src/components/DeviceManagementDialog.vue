@@ -428,7 +428,13 @@ async function confirmDeleteTransformer(transformer: TransformerOptionResponse) 
     await ElMessageBox.confirm(
       `将删除箱变“${transformer.transformerName}”，删除后不可恢复，历史数据保留。`,
       '确认删除',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        customClass: 'device-confirm-box',
+        confirmButtonClass: 'device-confirm-danger',
+      },
     )
     await deleteTransformer(props.session, transformer.transformerId)
     if (selectedTransformerId.value === transformer.transformerId) {
@@ -453,7 +459,13 @@ async function confirmDeleteCircuit(circuit: CircuitOptionResponse) {
     await ElMessageBox.confirm(
       `将删除回路“${circuit.circuitName}”，删除后不可恢复，历史数据保留。`,
       '确认删除',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        customClass: 'device-confirm-box',
+        confirmButtonClass: 'device-confirm-danger',
+      },
     )
     await deleteCircuit(props.session, circuit.circuitId)
     if (selectedCircuitId.value === circuit.circuitId) {
@@ -477,7 +489,13 @@ async function confirmDeletePoint(point: ManagedPointRow) {
     await ElMessageBox.confirm(
       `将删除测点“${point.pointName}”，删除后不可恢复，历史数据保留。`,
       '确认删除',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        customClass: 'device-confirm-box',
+        confirmButtonClass: 'device-confirm-danger',
+      },
     )
     await deleteMeasurePoint(props.session, point.id)
     if (editingPointId.value === point.id) {
@@ -597,7 +615,7 @@ function isCancel(error: unknown) {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="设备管理" width="1360px" top="4vh" destroy-on-close>
+  <el-dialog v-model="visible" class="device-dialog" title="设备管理" width="1360px" top="4vh" destroy-on-close>
     <div class="device-manager">
       <section class="manager-section">
         <div class="section-header">
@@ -719,7 +737,12 @@ function isCancel(error: unknown) {
     </div>
   </el-dialog>
 
-  <el-dialog v-model="transformerDialogVisible" :title="transformerDialogMode === 'create' ? '新增箱变' : '编辑箱变'" width="640px">
+  <el-dialog
+    v-model="transformerDialogVisible"
+    class="device-dialog"
+    :title="transformerDialogMode === 'create' ? '新增箱变' : '编辑箱变'"
+    width="640px"
+  >
     <el-form :model="transformerForm" label-position="top" class="manager-form-grid">
       <el-form-item label="箱变编码">
         <el-input v-model="transformerForm.transformerCode" />
@@ -757,7 +780,12 @@ function isCancel(error: unknown) {
     </template>
   </el-dialog>
 
-  <el-dialog v-model="circuitDialogVisible" :title="circuitDialogMode === 'create' ? '新增回路' : '编辑回路'" width="620px">
+  <el-dialog
+    v-model="circuitDialogVisible"
+    class="device-dialog"
+    :title="circuitDialogMode === 'create' ? '新增回路' : '编辑回路'"
+    width="620px"
+  >
     <el-form :model="circuitForm" label-position="top" class="manager-form-grid">
       <el-form-item label="回路编码">
         <el-input v-model="circuitForm.circuitCode" />
@@ -788,7 +816,12 @@ function isCancel(error: unknown) {
     </template>
   </el-dialog>
 
-  <el-dialog v-model="pointDialogVisible" :title="pointDialogMode === 'create' ? '新增测点' : '编辑测点'" width="760px">
+  <el-dialog
+    v-model="pointDialogVisible"
+    class="device-dialog"
+    :title="pointDialogMode === 'create' ? '新增测点' : '编辑测点'"
+    width="760px"
+  >
     <el-form :model="pointForm" label-position="top" class="manager-form-grid point-form-grid">
       <el-form-item label="挂载回路">
         <el-select v-model="pointForm.circuitId" clearable placeholder="直属箱变">
@@ -854,10 +887,11 @@ function isCancel(error: unknown) {
 }
 
 .manager-section {
-  border: 1px solid #d9e2ec;
-  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(19, 28, 49, 0.65);
+  backdrop-filter: blur(16px);
 }
 
 .section-header {
@@ -870,12 +904,16 @@ function isCancel(error: unknown) {
 
 .section-header h3 {
   margin: 0;
-  font-size: 18px;
+  color: #F1F5F9;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .section-header p {
   margin: 4px 0 0;
-  color: #64748b;
+  color: #94A3B8;
+  font-size: 13px;
 }
 
 .section-header-points {
@@ -891,6 +929,7 @@ function isCancel(error: unknown) {
 .row-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .manager-form-grid {
@@ -909,6 +948,272 @@ function isCancel(error: unknown) {
 
 :deep(.is-selected-row) {
   --el-table-tr-bg-color: rgba(59, 130, 246, 0.08);
+}
+
+:global(.device-dialog.el-dialog.el-dialog) {
+  background: #131C31 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 50px rgba(59, 130, 246, 0.06) !important;
+  color: #F1F5F9;
+  max-width: calc(100vw - 32px);
+}
+
+:global(.device-dialog.el-dialog .el-dialog__header) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 0;
+  padding: 18px 20px 16px;
+}
+
+:global(.device-dialog.el-dialog .el-dialog__title) {
+  color: #F1F5F9 !important;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+:global(.device-dialog.el-dialog .el-dialog__headerbtn .el-dialog__close) {
+  color: #64748B !important;
+}
+
+:global(.device-dialog.el-dialog .el-dialog__headerbtn:hover .el-dialog__close) {
+  color: #60A5FA !important;
+}
+
+:global(.device-dialog.el-dialog .el-dialog__body) {
+  color: #94A3B8 !important;
+  padding: 20px;
+}
+
+:global(.device-dialog.el-dialog .el-dialog__footer) {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 14px 20px 18px;
+}
+
+:deep(.el-form-item__label) {
+  color: #94A3B8 !important;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+:deep(.el-input__wrapper),
+:deep(.el-textarea__inner),
+:deep(.el-input-number .el-input__wrapper),
+:deep(.el-date-editor.el-input__wrapper) {
+  background: rgba(19, 28, 49, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+:deep(.el-input__inner),
+:deep(.el-textarea__inner),
+:deep(.el-input-number__decrease),
+:deep(.el-input-number__increase) {
+  color: #F1F5F9 !important;
+}
+
+:deep(.el-input-number__decrease),
+:deep(.el-input-number__increase) {
+  background: rgba(11, 17, 32, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:deep(.el-input__inner::placeholder),
+:deep(.el-textarea__inner::placeholder) {
+  color: #64748B !important;
+}
+
+:deep(.el-input__wrapper:hover),
+:deep(.el-textarea__inner:hover) {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+:deep(.el-input.is-focus .el-input__wrapper),
+:deep(.el-select .el-input.is-focus .el-input__wrapper),
+:deep(.el-textarea__inner:focus) {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08), 0 0 14px rgba(59, 130, 246, 0.06) !important;
+}
+
+:deep(.el-button--default) {
+  background: rgba(19, 28, 49, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #94A3B8 !important;
+  transition: all 0.15s ease;
+}
+
+:deep(.el-button--default:hover) {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.35) !important;
+  color: #F1F5F9 !important;
+}
+
+:deep(.el-button--primary) {
+  background: linear-gradient(135deg, #2563EB, #3B82F6) !important;
+  border-color: transparent !important;
+  color: #FFFFFF !important;
+}
+
+:deep(.el-button--primary:hover) {
+  background: linear-gradient(135deg, #3B82F6, #60A5FA) !important;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3) !important;
+}
+
+:deep(.el-button--danger) {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+  color: #F87171 !important;
+}
+
+:deep(.el-button--danger:hover) {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #FCA5A5 !important;
+}
+
+:deep(.el-table) {
+  --el-table-bg-color: rgba(19, 28, 49, 0.7);
+  --el-table-tr-bg-color: rgba(19, 28, 49, 0.7);
+  --el-table-header-bg-color: transparent;
+  --el-table-border-color: rgba(255, 255, 255, 0.05);
+  --el-table-text-color: #F1F5F9;
+  --el-table-header-text-color: #94A3B8;
+  --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.06);
+  --el-table-current-row-bg-color: rgba(59, 130, 246, 0.08);
+  --el-table-striped-row-bg-color: rgba(19, 28, 49, 0.55);
+  --el-table-row-striped-bg-color: rgba(19, 28, 49, 0.55);
+  --el-fill-color-lighter: rgba(19, 28, 49, 0.55);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+:deep(.el-table .el-table__cell) {
+  border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+:deep(.el-table__body tr > td.el-table__cell) {
+  padding-bottom: 12px;
+  padding-top: 12px;
+}
+
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background-color: rgba(19, 28, 49, 0.55) !important;
+}
+
+:deep(.el-table__body tr:hover > td.el-table__cell),
+:deep(.el-table__body tr.is-selected-row > td.el-table__cell) {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+:deep(.el-tag) {
+  border-radius: 4px;
+  border-width: 1px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+:deep(.el-tag--success) {
+  background: rgba(34, 197, 94, 0.12) !important;
+  border-color: rgba(34, 197, 94, 0.25) !important;
+  color: #4ADE80 !important;
+}
+
+:deep(.el-tag--danger) {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+  color: #F87171 !important;
+}
+
+:deep(.el-tag--warning) {
+  background: rgba(245, 158, 11, 0.12) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
+  color: #FBBF24 !important;
+}
+
+:deep(.el-tag--info) {
+  background: rgba(100, 116, 139, 0.12) !important;
+  border-color: rgba(100, 116, 139, 0.25) !important;
+  color: #94A3B8 !important;
+}
+
+:deep(.el-select-dropdown),
+:deep(.el-popper.is-light),
+:deep(.el-picker__popper.el-popper) {
+  background: #131C31 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+:deep(.el-select-dropdown__item),
+:deep(.el-picker-panel),
+:deep(.el-date-table th),
+:deep(.el-date-table td) {
+  color: #94A3B8 !important;
+}
+
+:deep(.el-select-dropdown__item.hover),
+:deep(.el-select-dropdown__item:hover),
+:deep(.el-date-table td.available:hover) {
+  background: rgba(59, 130, 246, 0.08) !important;
+  color: #F1F5F9 !important;
+}
+
+:deep(.el-select-dropdown__item.selected),
+:deep(.el-date-table td.current:not(.disabled) .el-date-table-cell__text) {
+  color: #60A5FA !important;
+  font-weight: 600;
+}
+
+:deep(.el-scrollbar__thumb) {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+:global(.device-confirm-box) {
+  background: #131C31 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 50px rgba(59, 130, 246, 0.06) !important;
+}
+
+:global(.device-confirm-box .el-message-box__title),
+:global(.device-confirm-box .el-message-box__message) {
+  color: #F1F5F9 !important;
+}
+
+:global(.device-confirm-box .el-message-box__content) {
+  color: #94A3B8 !important;
+}
+
+:global(.device-confirm-box .el-message-box__headerbtn .el-message-box__close) {
+  color: #64748B !important;
+}
+
+:global(.device-confirm-box .el-button--default) {
+  background: rgba(19, 28, 49, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #94A3B8 !important;
+}
+
+:global(.device-confirm-box .device-confirm-danger) {
+  background: rgba(239, 68, 68, 0.14) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #F87171 !important;
+}
+
+:global(.device-confirm-box .device-confirm-danger:hover) {
+  background: rgba(239, 68, 68, 0.22) !important;
+  border-color: rgba(248, 113, 113, 0.45) !important;
+  color: #FCA5A5 !important;
 }
 
 @media (max-width: 900px) {

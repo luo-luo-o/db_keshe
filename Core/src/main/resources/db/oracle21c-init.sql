@@ -11,6 +11,9 @@
     box transformer metadata, circuits, measure points, and thresholds.
   - oracle21c-mock-data.sql: demo/mock runtime data, including second-level
     samples, alarms, maintenance tasks, and cabinet door logs.
+  - oracle21c-business.sql: PL/SQL business packages and simulation helpers.
+  - oracle21c-asset-management.sql: device management packages and triggers.
+  - oracle21c-backup-datapump.sql: Data Pump backup metadata and procedures.
 */
 
 ALTER SESSION SET TIME_ZONE = 'Asia/Shanghai';
@@ -20,5 +23,5 @@ ALTER SESSION SET TIME_ZONE = 'Asia/Shanghai';
 @@oracle21c-mock-data.sql
 @@oracle21c-business.sql
 @@oracle21c-asset-management.sql
+@@oracle21c-backup-datapump.sql
 @@oracle21c-localized-data.sql
-

@@ -228,16 +228,23 @@ export interface BackupSnapshotResponse {
   id: number
   snapshotName: string
   note?: string
+  dumpFileName?: string
+  logFileName?: string
+  restoreLogFileName?: string
+  status: 'CREATING' | 'SUCCESS' | 'FAILED' | 'RESTORING' | 'RESTORE_FAILED'
   transformerCount: number
   circuitCount: number
   pointCount: number
   rawDataCount: number
+  archiveCount: number
+  doorLogCount: number
   alarmCount: number
   taskCount: number
   createdBy?: string
   createdAt: string
   restoredAt?: string
   restoredBy?: string
+  errorMessage?: string
 }
 
 export interface CreateBackupPayload {

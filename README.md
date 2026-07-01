@@ -78,6 +78,8 @@ docker compose up -d
 
 默认开发时区为 `Asia/Shanghai (UTC+8)`。如果重置数据库，请先用 `SYSTEM` 或 `SYSDBA` 执行 `Core/src/main/resources/db/oracle21c-admin-timezone.sql`，重启 Oracle 后，再执行 `Core/src/main/resources/db/oracle21c-init.sql`。应用默认数据库时区也已对齐到 `Asia/Shanghai`。
 
+备份回溯使用 Oracle Data Pump。使用前请在 XEPDB1 中用 `SYSTEM` 或 `SYSDBA` 执行 `Core/src/main/resources/db/oracle21c-admin-datapump.sql`，它会创建 `PSM_BACKUP_DIR` 并授权应用用户读写。脚本提示应用数据库用户时，请输入 `.env` 中的 `DB_USERNAME`；直接回车会使用默认的 `psm_app`。
+
 ## 日志
 
 后端文件日志默认写入根目录 `logs/`。
@@ -91,5 +93,6 @@ docker compose up -d
 
 数据库初始化入口脚本为 `Core/src/main/resources/db/oracle21c-init.sql`。
 数据库时区管理员脚本为 `Core/src/main/resources/db/oracle21c-admin-timezone.sql`。
+Data Pump 目录管理员脚本为 `Core/src/main/resources/db/oracle21c-admin-datapump.sql`。
 
 执行初始化时请确保 SQL 客户端和脚本文件都按 UTF-8 处理；基础中文展示数据、权限文案和样例名称都依赖 UTF-8 编码，错误的会话编码会导致中文乱码。

@@ -1,6 +1,7 @@
 package pers.luoluo.databasekeshe.backup.service;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Types;
 import java.util.List;
 import org.slf4j.Logger;
@@ -46,7 +47,7 @@ public class BackupService {
         Long snapshotId;
         try {
             snapshotId = jdbcTemplate.execute((CallableStatementCreator) (Connection connection) -> {
-                var statement = connection.prepareCall("{call PKG_PSM_BACKUP.CREATE_SNAPSHOT(?, ?, ?, ?)}");
+                var statement = connection.prepareCall("{call PKG_PSM_BACKUP.CREATE_BACKUP(?, ?, ?, ?)}");
                 statement.setString(1, snapshotName);
                 statement.setString(2, note);
                 statement.setString(3, user.username());
@@ -57,7 +58,9 @@ public class BackupService {
                 return statement.getLong(4);
             });
         } catch (DataAccessException exception) {
-            throw new AuthException(HttpStatus.BAD_REQUEST, "创建备份失败");
+            LOGGER.warn("event=data_backup_create userId={} username={} result=FAILED reason={}",
+                    user.userId(), sanitize(user.username()), sanitize(rootSqlMessage(exception)));
+            throw new AuthException(HttpStatus.BAD_REQUEST, "创建备份失败：" + backupFailureReason(exception));
         }
 
         BackupSnapshotResponse snapshot = backupMapper.findSnapshotById(snapshotId);
@@ -77,7 +80,7 @@ public class BackupService {
 
         try {
             jdbcTemplate.execute((CallableStatementCreator) (Connection connection) -> {
-                var statement = connection.prepareCall("{call PKG_PSM_BACKUP.RESTORE_SNAPSHOT(?, ?)}");
+                var statement = connection.prepareCall("{call PKG_PSM_BACKUP.RESTORE_BACKUP(?, ?)}");
                 statement.setLong(1, snapshotId);
                 statement.setString(2, user.username());
                 return statement;
@@ -86,7 +89,9 @@ public class BackupService {
                 return null;
             });
         } catch (DataAccessException exception) {
-            throw new AuthException(HttpStatus.BAD_REQUEST, "回溯备份失败");
+            LOGGER.warn("event=data_backup_restore userId={} username={} snapshotId={} result=FAILED reason={}",
+                    user.userId(), sanitize(user.username()), snapshotId, sanitize(rootSqlMessage(exception)));
+            throw new AuthException(HttpStatus.BAD_REQUEST, "回溯备份失败：" + backupFailureReason(exception));
         }
 
         BackupSnapshotResponse snapshot = backupMapper.findSnapshotById(snapshotId);
@@ -108,5 +113,29 @@ public class BackupService {
 
     private String sanitize(String value) {
         return value == null ? "-" : value.replace('\r', ' ').replace('\n', ' ').trim();
+    }
+
+    private String backupFailureReason(DataAccessException exception) {
+        String message = rootSqlMessage(exception);
+        if (message == null || message.isBlank()) {
+            return "请检查 Data Pump 目录授权和数据库运行日志";
+        }
+
+        if (message.contains("ORA-39087") || message.contains("ORA-29283") || message.contains("PSM_BACKUP_DIR")) {
+            return "Data Pump 目录 PSM_BACKUP_DIR 不可用，请先执行 oracle21c-admin-datapump.sql 并确认目录可写";
+        }
+
+        return "请检查备份元数据、Data Pump 日志和数据库运行日志";
+    }
+
+    private String rootSqlMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException) {
+                return current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return throwable == null ? null : throwable.getMessage();
     }
 }

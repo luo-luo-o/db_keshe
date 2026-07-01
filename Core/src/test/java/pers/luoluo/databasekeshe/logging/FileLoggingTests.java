@@ -38,6 +38,7 @@ import pers.luoluo.databasekeshe.common.exception.GlobalExceptionHandler;
 import pers.luoluo.databasekeshe.logging.config.RuntimeLogInterceptor;
 import pers.luoluo.databasekeshe.logging.config.WebMvcConfig;
 import pers.luoluo.databasekeshe.logging.service.RuntimeLogService;
+import pers.luoluo.databasekeshe.simulation.mapper.SimulationMapper;
 import pers.luoluo.databasekeshe.simulation.service.SimulationService;
 
 @ExtendWith(OutputCaptureExtension.class)
@@ -112,7 +113,11 @@ class FileLoggingTests {
                 .when(jdbcTemplate)
                 .execute(any(CallableStatementCreator.class), org.mockito.ArgumentMatchers.<CallableStatementCallback<Object>>any());
 
-        SimulationService simulationService = new SimulationService(jdbcTemplate, new RuntimeLogService());
+        SimulationService simulationService = new SimulationService(
+                jdbcTemplate,
+                new RuntimeLogService(),
+                Mockito.mock(SimulationMapper.class)
+        );
         simulationService.writeTick();
 
         String applicationLog = waitForLogContaining(logDir().resolve("application.log"), "Database simulation tick failed");

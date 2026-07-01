@@ -29,7 +29,7 @@ const registerForm = reactive<RegisterForm>({
   password: '',
   confirmPassword: '',
   displayName: '',
-  roleCode: 'OPERATOR',
+  roleCode: 'MANAGER',
 })
 
 function switchMode(nextMode: AuthMode) {
@@ -299,7 +299,7 @@ onUnmounted(() => {
               v-model="loginForm.username"
               name="username"
               autocomplete="username"
-              placeholder="admin / operator / engineer01"
+              placeholder="admin / engineer01 / manager"
             />
           </div>
         </label>

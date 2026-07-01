@@ -72,9 +72,8 @@ BOX_TRANSFORMER -> POWER_CIRCUIT -> MEASURE_POINT -> TS_RAW_DATA
 ## 角色
 
 - `ADMIN`：系统管理员，全权限。
-- `OPERATOR`：运行监控员，可查看采样、历史和告警。
 - `ENGINEER`：维保工程师，可查看告警和处理工单。
-- `MANAGER`：管理人员，只读查看运行、告警和工单状态。
+- `MANAGER`：管理人员，可查看运行、告警和工单状态，并可处理工单。
 
 ## 当前技术栈
 

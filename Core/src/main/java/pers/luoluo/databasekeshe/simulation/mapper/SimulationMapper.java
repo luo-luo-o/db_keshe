@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import pers.luoluo.databasekeshe.simulation.dto.SimulationDataRow;
 import pers.luoluo.databasekeshe.simulation.dto.SimulationPointProfile;
 
 @Mapper
@@ -27,6 +28,57 @@ public interface SimulationMapper {
             ORDER BY TRANSFORMER_ID, CIRCUIT_ID NULLS LAST, ID
             """)
     List<SimulationPointProfile> findPointProfiles();
+
+    @Select("""
+            SELECT *
+            FROM (
+                SELECT
+                    DATA_ROW.*,
+                    ROW_NUMBER() OVER (ORDER BY DATA_ROW.sampleTime DESC, DATA_ROW.id DESC) AS rowNumber
+                FROM (
+                    SELECT
+                        R.ID AS id,
+                        R.TRANSFORMER_ID AS transformerId,
+                        BT.NAME AS transformerName,
+                        R.CIRCUIT_ID AS circuitId,
+                        PC.NAME AS circuitName,
+                        R.POINT_ID AS pointId,
+                        MP.POINT_NAME AS pointName,
+                        MP.POINT_CODE AS pointCode,
+                        MP.UNIT AS unit,
+                        R.SAMPLE_TIME AS sampleTime,
+                        R.VAL AS value,
+                        R.QUALITY_FLAG AS qualityFlag,
+                        R.CREATED_AT AS createdAt
+                    FROM TS_RAW_DATA R
+                    JOIN BOX_TRANSFORMER BT ON BT.ID = R.TRANSFORMER_ID
+                    LEFT JOIN POWER_CIRCUIT PC ON PC.ID = R.CIRCUIT_ID
+                    JOIN MEASURE_POINT MP ON MP.ID = R.POINT_ID
+                    WHERE R.SAMPLE_TIME >= (
+                        SELECT NVL(STARTED_AT, TIMESTAMP '1970-01-01 00:00:00')
+                        FROM SIM_CONTROL
+                        WHERE ID = 1
+                    )
+                ) DATA_ROW
+            )
+            WHERE rowNumber BETWEEN #{startRow} AND #{endRow}
+            ORDER BY rowNumber
+            """)
+    List<SimulationDataRow> findRecentSimulationData(
+            @Param("startRow") int startRow,
+            @Param("endRow") int endRow
+    );
+
+    @Select("""
+            SELECT COUNT(1)
+            FROM TS_RAW_DATA R
+            WHERE R.SAMPLE_TIME >= (
+                SELECT NVL(STARTED_AT, TIMESTAMP '1970-01-01 00:00:00')
+                FROM SIM_CONTROL
+                WHERE ID = 1
+            )
+            """)
+    long countRecentSimulationData();
 
     @Insert("""
             INSERT INTO TS_RAW_DATA (

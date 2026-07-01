@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.util.List;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.CallableStatementCallback;
 import org.springframework.jdbc.core.CallableStatementCreator;
@@ -13,17 +14,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import pers.luoluo.databasekeshe.logging.service.RuntimeLogService;
+import pers.luoluo.databasekeshe.simulation.dto.SimulationDataPage;
+import pers.luoluo.databasekeshe.simulation.dto.SimulationDataRow;
 import pers.luoluo.databasekeshe.simulation.dto.SimulationStatusResponse;
+import pers.luoluo.databasekeshe.simulation.mapper.SimulationMapper;
 
 @Service
 public class SimulationService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RuntimeLogService runtimeLogService;
+    private final SimulationMapper simulationMapper;
 
-    public SimulationService(JdbcTemplate jdbcTemplate, RuntimeLogService runtimeLogService) {
+    public SimulationService(JdbcTemplate jdbcTemplate, RuntimeLogService runtimeLogService, SimulationMapper simulationMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.runtimeLogService = runtimeLogService;
+        this.simulationMapper = simulationMapper;
     }
 
     public SimulationStatusResponse start() {
@@ -62,6 +68,15 @@ public class SimulationService {
                 return mapStatus(resultSet);
             }
         });
+    }
+
+    public SimulationDataPage recentData(int page, int size) {
+        int pageSize = Math.max(1, Math.min(size, 100));
+        int pageNumber = Math.max(page, 1);
+        int startIndex = ((pageNumber - 1) * pageSize) + 1;
+        int endIndex = pageNumber * pageSize;
+        List<SimulationDataRow> rows = simulationMapper.findRecentSimulationData(startIndex, endIndex);
+        return new SimulationDataPage(rows, simulationMapper.countRecentSimulationData(), pageNumber, pageSize);
     }
 
     @Scheduled(fixedRate = 100)

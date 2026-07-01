@@ -1,6 +1,8 @@
 import { apiDelete, apiGet, apiPost } from './http'
 import type { AuthSession } from '../types/auth'
 import type {
+  BackupSnapshotResponse,
+  CreateBackupPayload,
   CreateCircuitPayload,
   CreateMeasurePointPayload,
   CreateTransformerPayload,
@@ -12,6 +14,7 @@ import type {
   MessageResponse,
   RuntimeLogLevel,
   RuntimeLogResponse,
+  SimulationDataPage,
   SimulationStatusResponse,
   TaskQuery,
   TaskUpdatePayload,
@@ -68,8 +71,24 @@ export function fetchHistory(session: AuthSession, query: HistoryQuery) {
   return apiGet<HistoryDataRow[]>('/api/history', session, query)
 }
 
+export function fetchBackups(session: AuthSession) {
+  return apiGet<BackupSnapshotResponse[]>('/api/backups', session)
+}
+
+export function createBackup(session: AuthSession, payload: CreateBackupPayload) {
+  return apiPost<BackupSnapshotResponse>('/api/backups', session, payload)
+}
+
+export function restoreBackup(session: AuthSession, snapshotId: number) {
+  return apiPost<BackupSnapshotResponse>(`/api/backups/${snapshotId}/restore`, session)
+}
+
 export function fetchSimulationStatus(session: AuthSession) {
   return apiGet<SimulationStatusResponse>('/api/simulation/status', session)
+}
+
+export function fetchSimulationData(session: AuthSession, page = 1, size = 20) {
+  return apiGet<SimulationDataPage>('/api/simulation/data', session, { page, size })
 }
 
 export function fetchRuntimeLogs(session: AuthSession, level: RuntimeLogLevel = 'INFO') {

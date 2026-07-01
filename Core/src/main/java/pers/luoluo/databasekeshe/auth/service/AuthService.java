@@ -20,7 +20,7 @@ public class AuthService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private static final int ACTIVE_STATUS = 0;
-    private static final Set<String> ROLE_CODES = Set.of("ADMIN", "OPERATOR", "ENGINEER", "MANAGER");
+    private static final Set<String> ROLE_CODES = Set.of("ADMIN", "ENGINEER", "MANAGER");
 
     private final AuthMapper authMapper;
     private final PasswordService passwordService;

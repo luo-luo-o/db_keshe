@@ -201,6 +201,50 @@ export interface SimulationStatusResponse {
   currentIntervalMs: number
 }
 
+export interface SimulationDataRow {
+  id: number
+  transformerId: number
+  transformerName: string
+  circuitId?: number
+  circuitName?: string
+  pointId: number
+  pointName: string
+  pointCode: string
+  unit?: string
+  sampleTime: string
+  value: number
+  qualityFlag: number
+  createdAt: string
+}
+
+export interface SimulationDataPage {
+  rows: SimulationDataRow[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface BackupSnapshotResponse {
+  id: number
+  snapshotName: string
+  note?: string
+  transformerCount: number
+  circuitCount: number
+  pointCount: number
+  rawDataCount: number
+  alarmCount: number
+  taskCount: number
+  createdBy?: string
+  createdAt: string
+  restoredAt?: string
+  restoredBy?: string
+}
+
+export interface CreateBackupPayload {
+  snapshotName?: string
+  note?: string
+}
+
 export type RuntimeLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 export type RuntimeLogSource = 'DATABASE'
 
@@ -238,10 +282,6 @@ export const pointGroupLabels: Record<PointGroup, string> = {
 export const phaseCodeOptions: PhaseCode[] = ['A', 'B', 'C', 'AB', 'BC', 'CA', 'TOTAL', 'NONE']
 
 export function allowedCategories(roleCode: RoleCode): MessageCategory[] {
-  if (roleCode === 'OPERATOR') {
-    return ['SAMPLE', 'ALARM']
-  }
-
   if (roleCode === 'ENGINEER') {
     return ['ALARM', 'TASK']
   }

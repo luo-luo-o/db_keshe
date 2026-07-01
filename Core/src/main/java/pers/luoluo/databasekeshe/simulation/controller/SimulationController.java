@@ -8,11 +8,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import pers.luoluo.databasekeshe.security.AccessGuard;
 import pers.luoluo.databasekeshe.security.AuthenticatedUser;
 import pers.luoluo.databasekeshe.security.RoleCode;
 import pers.luoluo.databasekeshe.simulation.dto.AnomalyToggleRequest;
+import pers.luoluo.databasekeshe.simulation.dto.SimulationDataPage;
 import pers.luoluo.databasekeshe.simulation.dto.SimulationStatusResponse;
 import pers.luoluo.databasekeshe.simulation.service.SimulationService;
 
@@ -36,6 +38,17 @@ public class SimulationController {
     ) {
         requireAdmin(userId, roleCode);
         return simulationService.status();
+    }
+
+    @GetMapping("/data")
+    public SimulationDataPage data(
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestHeader("X-Role-Code") String roleCode,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        requireAdmin(userId, roleCode);
+        return simulationService.recentData(page, size);
     }
 
     @PostMapping("/start")

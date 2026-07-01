@@ -130,9 +130,8 @@ GET /api/runtime-logs?level=INFO
 
 - 所有业务接口使用请求头 `X-User-Id`、`X-Role-Code`。
 - `ADMIN` 通过全部权限。
-- `OPERATOR` 可查询采样、历史和告警，不可处理工单。
 - `ENGINEER` 可查询告警和工单，可处理工单。
-- `MANAGER` 可只读查询采样、历史、告警和工单。
+- `MANAGER` 可查询采样、历史、告警和工单，可处理工单。
 
 ## 查询实现建议
 

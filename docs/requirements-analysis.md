@@ -118,10 +118,9 @@ BOX_TRANSFORMER -> POWER_CIRCUIT -> MEASURE_POINT
 
 ### 3.7 权限与账号
 
-系统保留四类角色：
+系统保留三类角色：
 
 - `ADMIN`
-- `OPERATOR`
 - `ENGINEER`
 - `MANAGER`
 

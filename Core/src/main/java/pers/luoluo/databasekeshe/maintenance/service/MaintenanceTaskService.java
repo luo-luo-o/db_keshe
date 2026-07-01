@@ -55,7 +55,7 @@ public class MaintenanceTaskService {
     }
 
     public MaintenanceTaskResponse updateTask(AuthenticatedUser user, Long taskId, TaskUpdateRequest request) {
-        accessGuard.requireAny(user, RoleCode.ENGINEER);
+        accessGuard.requireAny(user, RoleCode.ENGINEER, RoleCode.MANAGER);
         if (taskId == null || maintenanceTaskMapper.existsById(taskId) == 0) {
             throw new AuthException(HttpStatus.NOT_FOUND, "Task does not exist.");
         }

@@ -2,12 +2,16 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import {
+  createBackup,
   fetchHistory,
+  fetchBackups,
   fetchMessages,
   fetchRuntimeLogs,
+  fetchSimulationData,
   fetchSimulationStatus,
   fetchTasks,
   fetchTransformers,
+  restoreBackup,
   setSimulationAnomaly,
   startSimulation,
   stopSimulation,
@@ -19,6 +23,7 @@ import {
   categoryLabels,
   runtimeLogLevelLabels,
   runtimeLogLevelOptions,
+  type BackupSnapshotResponse,
   type CircuitOptionResponse,
   type HistoryDataRow,
   type MaintenanceTaskResponse,
@@ -27,6 +32,7 @@ import {
   type MessageResponse,
   type RuntimeLogLevel,
   type RuntimeLogResponse,
+  type SimulationDataRow,
   type SimulationStatusResponse,
   type TransformerOptionResponse,
 } from '../types/dashboard'
@@ -40,7 +46,7 @@ const emit = defineEmits<{
   logout: []
 }>()
 
-type TabName = 'messages' | 'history' | 'tasks' | 'simulation' | 'logs'
+type TabName = 'messages' | 'history' | 'tasks' | 'simulation' | 'backup' | 'logs'
 type TransformerStatusFilter = 'all' | 'normal' | 'warning' | 'offline'
 type HistoryGroupStatus = 'normal' | 'suspect' | 'invalid'
 
@@ -59,8 +65,11 @@ const tabTitles: Record<TabName, string> = {
   history: '历史数据',
   tasks: '工单管理',
   simulation: '模拟测试',
+  backup: '备份回溯',
   logs: '运行日志',
 }
+
+const SIMULATION_PAGE_SIZE = 20
 
 const activeTab = ref<TabName>('messages')
 const transformers = ref<TransformerOptionResponse[]>([])
@@ -68,12 +77,19 @@ const messages = ref<MessageResponse[]>([])
 const historyRows = ref<HistoryDataRow[]>([])
 const tasks = ref<MaintenanceTaskResponse[]>([])
 const simulation = ref<SimulationStatusResponse | null>(null)
+const simulationRows = ref<SimulationDataRow[]>([])
+const simulationDataTotal = ref(0)
+const simulationDataPage = ref(1)
+const backups = ref<BackupSnapshotResponse[]>([])
 const backendLogs = ref<RuntimeLogResponse[]>([])
 const isLoadingMessages = ref(false)
 const isLoadingHistory = ref(false)
 const isLoadingTasks = ref(false)
 const isLoadingMetadata = ref(false)
 const isSimulationBusy = ref(false)
+const isLoadingSimulationData = ref(false)
+const isLoadingBackups = ref(false)
+const isBackupBusy = ref(false)
 const isLoadingRuntimeLogs = ref(false)
 const errorMessage = ref('')
 const selectedTransformerStatus = ref<TransformerStatusFilter | null>(null)
@@ -124,6 +140,8 @@ const messageQueryState = createSerializedTaskState()
 const historyQueryState = createSerializedTaskState()
 const taskQueryState = createSerializedTaskState()
 const simulationStatusLoadState = createSerializedTaskState()
+const simulationDataLoadState = createSerializedTaskState()
+const backupLoadState = createSerializedTaskState()
 const runtimeLogsLoadState = createSerializedTaskState()
 
 const messageForm = reactive({
@@ -160,10 +178,15 @@ const taskEditForm = reactive({
   feedback: '',
 })
 
+const backupForm = reactive({
+  snapshotName: '',
+  note: '',
+})
+
 const categoryOptions = computed(() => allowedCategories(props.session.roleCode))
 const isAdmin = computed(() => props.session.roleCode === 'ADMIN')
 const canQueryTasks = computed(() => ['ADMIN', 'ENGINEER', 'MANAGER'].includes(props.session.roleCode))
-const canEditTasks = computed(() => ['ADMIN', 'ENGINEER'].includes(props.session.roleCode))
+const canEditTasks = computed(() => ['ADMIN', 'ENGINEER', 'MANAGER'].includes(props.session.roleCode))
 const activeTabTitle = computed(() => tabTitles[activeTab.value])
 
 const messageCircuitOptions = computed(() => circuitsForTransformer(messageForm.transformerId))
@@ -443,6 +466,16 @@ async function loadActiveTabData(tab: TabName = activeTab.value) {
     return
   }
 
+  if (tab === 'simulation' && isAdmin.value) {
+    await Promise.all([loadSimulationStatus(), loadSimulationData()])
+    return
+  }
+
+  if (tab === 'backup' && isAdmin.value) {
+    await loadBackups()
+    return
+  }
+
   if (tab === 'logs' && isAdmin.value) {
     await loadRuntimeLogs()
   }
@@ -461,6 +494,11 @@ async function loadPollingData() {
 
   if (activeTab.value === 'tasks' && canQueryTasks.value) {
     await queryTasks()
+    return
+  }
+
+  if (activeTab.value === 'simulation' && isAdmin.value) {
+    await loadSimulationData()
   }
 }
 
@@ -552,6 +590,28 @@ async function loadSimulationStatus() {
   })
 }
 
+async function loadSimulationData() {
+  if (!isAdmin.value) {
+    return
+  }
+
+  await runSerializedTask(simulationDataLoadState, async () => {
+    isLoadingSimulationData.value = true
+    errorMessage.value = ''
+
+    try {
+      const response = await fetchSimulationData(props.session, simulationDataPage.value, SIMULATION_PAGE_SIZE)
+      simulationRows.value = response.rows
+      simulationDataTotal.value = response.total
+      simulationDataPage.value = response.page
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingSimulationData.value = false
+    }
+  })
+}
+
 function startSimulationPolling() {
   if (!isAdmin.value || simulationPollTimer !== undefined) {
     return
@@ -563,6 +623,25 @@ function startSimulationPolling() {
       void loadPollingData()
     }
   }, 1000)
+}
+
+async function loadBackups() {
+  if (!isAdmin.value) {
+    return
+  }
+
+  await runSerializedTask(backupLoadState, async () => {
+    isLoadingBackups.value = true
+    errorMessage.value = ''
+
+    try {
+      backups.value = await fetchBackups(props.session)
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+    } finally {
+      isLoadingBackups.value = false
+    }
+  })
 }
 
 async function loadRuntimeLogs() {
@@ -589,6 +668,8 @@ async function handleStartSimulation() {
 
   try {
     simulation.value = await startSimulation(props.session)
+    simulationDataPage.value = 1
+    await loadSimulationData()
     startSimulationPolling()
   } catch (error) {
     errorMessage.value = getErrorMessage(error)
@@ -619,6 +700,55 @@ async function handleAnomalyChange(value: string | number | boolean) {
     errorMessage.value = getErrorMessage(error)
   } finally {
     isSimulationBusy.value = false
+  }
+}
+
+async function handleSimulationPageChange(page: number) {
+  simulationDataPage.value = page
+  await loadSimulationData()
+}
+
+async function handleCreateBackup() {
+  if (!isAdmin.value) {
+    return
+  }
+
+  isBackupBusy.value = true
+  errorMessage.value = ''
+
+  try {
+    const snapshot = await createBackup(props.session, {
+      snapshotName: backupForm.snapshotName.trim() || undefined,
+      note: backupForm.note.trim() || undefined,
+    })
+    backups.value = [snapshot, ...backups.value.filter((item) => item.id !== snapshot.id)]
+    backupForm.snapshotName = ''
+    backupForm.note = ''
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  } finally {
+    isBackupBusy.value = false
+  }
+}
+
+async function handleRestoreBackup(snapshot: BackupSnapshotResponse) {
+  if (!window.confirm(`将回溯到备份“${snapshot.snapshotName}”，当前业务数据会被覆盖。继续？`)) {
+    return
+  }
+
+  isBackupBusy.value = true
+  errorMessage.value = ''
+
+  try {
+    const restored = await restoreBackup(props.session, snapshot.id)
+    backups.value = backups.value.map((item) => (item.id === restored.id ? restored : item))
+    simulationDataPage.value = 1
+    await Promise.all([loadMetadata(), loadSimulationStatus(), loadBackups()])
+    await loadActiveTabData()
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  } finally {
+    isBackupBusy.value = false
   }
 }
 
@@ -1023,6 +1153,10 @@ function handleMenuSelect(key: string) {
           <span class="nav-icon">🧪</span>
           <span>模拟测试</span>
         </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="backup">
+          <span class="nav-icon">💾</span>
+          <span>备份回溯</span>
+        </el-menu-item>
         <el-menu-item v-if="isAdmin" index="logs">
           <span class="nav-icon">📜</span>
           <span>运行日志</span>
@@ -1356,6 +1490,83 @@ function handleMenuSelect(key: string) {
             <strong class="metric-time">{{ formatTime(simulation?.lastWriteAt) }}</strong>
           </div>
         </div>
+
+        <div class="table-toolbar">
+          <strong>模拟生成数据</strong>
+          <el-button :loading="isLoadingSimulationData" @click="loadSimulationData">刷新</el-button>
+        </div>
+
+        <el-table :data="simulationRows" border stripe height="380" v-loading="isLoadingSimulationData">
+          <el-table-column prop="sampleTime" label="采样时间" min-width="170">
+            <template #default="{ row }">{{ formatTime(row.sampleTime) }}</template>
+          </el-table-column>
+          <el-table-column prop="transformerName" label="箱变" min-width="150" />
+          <el-table-column prop="circuitName" label="回路" min-width="130" />
+          <el-table-column prop="pointName" label="测点" min-width="150" />
+          <el-table-column prop="pointCode" label="编码" min-width="160" />
+          <el-table-column label="数值" min-width="130">
+            <template #default="{ row }">{{ row.value }}{{ row.unit ? ` ${row.unit}` : '' }}</template>
+          </el-table-column>
+          <el-table-column label="质量" width="110">
+            <template #default="{ row }">
+              <el-tag :type="historyGroupStatusType(historyGroupStatus(row.qualityFlag))">
+                {{ historyGroupStatusLabel(historyGroupStatus(row.qualityFlag)) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          class="table-pagination"
+          background
+          layout="total, prev, pager, next"
+          :current-page="simulationDataPage"
+          :page-size="SIMULATION_PAGE_SIZE"
+          :total="simulationDataTotal"
+          @current-change="handleSimulationPageChange"
+        />
+      </section>
+
+      <!-- ── Backup tab ───────────────────────────────────── -->
+      <section v-else-if="activeTab === 'backup'" class="panel backup-panel">
+        <el-form class="query-form backup-form" :model="backupForm" label-position="top">
+          <el-form-item label="备份名称">
+            <el-input v-model="backupForm.snapshotName" clearable placeholder="默认使用当前时间" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="backupForm.note" clearable placeholder="可选" />
+          </el-form-item>
+          <el-form-item class="query-actions">
+            <el-button type="primary" :loading="isBackupBusy" @click="handleCreateBackup">创建备份</el-button>
+            <el-button :loading="isLoadingBackups" @click="loadBackups">刷新</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="backups" border stripe height="560" v-loading="isLoadingBackups || isBackupBusy">
+          <el-table-column prop="id" label="编号" width="90" />
+          <el-table-column prop="snapshotName" label="备份名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
+          <el-table-column label="数据量" min-width="220">
+            <template #default="{ row }">
+              箱变 {{ row.transformerCount }} / 测点 {{ row.pointCount }} / 采样 {{ row.rawDataCount }}
+            </template>
+          </el-table-column>
+          <el-table-column label="告警/工单" min-width="130">
+            <template #default="{ row }">{{ row.alarmCount }} / {{ row.taskCount }}</template>
+          </el-table-column>
+          <el-table-column prop="createdBy" label="创建人" width="110" />
+          <el-table-column prop="createdAt" label="创建时间" min-width="170">
+            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+          </el-table-column>
+          <el-table-column label="最近回溯" min-width="170">
+            <template #default="{ row }">{{ formatTime(row.restoredAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" type="danger" @click="handleRestoreBackup(row)">回溯</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </section>
 
       <!-- ── Logs tab ──────────────────────────────────────── -->
@@ -1845,11 +2056,27 @@ function handleMenuSelect(key: string) {
 }
 
 .simulation-actions,
-.logs-toolbar {
+.logs-toolbar,
+.table-toolbar {
   display: flex;
   gap: 12px;
   align-items: center;
   margin-bottom: 18px;
+}
+
+.table-toolbar {
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.table-toolbar strong {
+  color: #F1F5F9;
+  font-size: 15px;
+}
+
+.table-pagination {
+  margin-top: 14px;
+  justify-content: flex-end;
 }
 
 .simulation-metrics {

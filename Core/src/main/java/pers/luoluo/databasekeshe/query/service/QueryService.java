@@ -99,7 +99,7 @@ public class QueryService {
     }
 
     public List<HistoryDataRow> queryHistory(AuthenticatedUser user, HistoryQueryRequest request) {
-        accessGuard.requireAny(user, RoleCode.ADMIN, RoleCode.OPERATOR, RoleCode.ENGINEER, RoleCode.MANAGER);
+        accessGuard.requireAny(user, RoleCode.ADMIN, RoleCode.ENGINEER, RoleCode.MANAGER);
 
         LocalDateTime applicationEndTime = request.endTime();
         if (applicationEndTime == null) {
@@ -142,7 +142,6 @@ public class QueryService {
     private List<MessageCategory> resolveCategories(AuthenticatedUser user, MessageCategory requestedCategory) {
         List<MessageCategory> allowedCategories = switch (user.roleCode()) {
             case ADMIN -> List.of(MessageCategory.SAMPLE, MessageCategory.ALARM, MessageCategory.TASK);
-            case OPERATOR -> List.of(MessageCategory.SAMPLE, MessageCategory.ALARM);
             case ENGINEER -> List.of(MessageCategory.ALARM, MessageCategory.TASK);
             case MANAGER -> List.of(MessageCategory.SAMPLE, MessageCategory.ALARM, MessageCategory.TASK);
         };

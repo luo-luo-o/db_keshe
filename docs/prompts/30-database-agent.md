@@ -241,7 +241,7 @@ CREATE INDEX IDX_TASK_ALARM ON MAINT_TASK (ALARM_ID);
 - 进线/出线电压、电流、功率因数、电能测点。
 - 油温、开关状态、熔断器状态测点。
 - 箱式柜温度、湿度、烟雾、柜门状态测点。
-- `ADMIN`、`OPERATOR`、`ENGINEER`、`MANAGER` 用户。
+- `ADMIN`、`ENGINEER`、`MANAGER` 用户。
 
 `oracle21c-mock-data.sql` 至少初始化：
 
